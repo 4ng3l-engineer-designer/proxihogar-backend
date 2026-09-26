@@ -64,4 +64,33 @@ export class TechnicianController {
       });
     }
   };
+
+  getById = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+
+      if (!id) {
+        res.status(400).json({
+          error: "El parámetro 'id' es requerido.",
+        });
+        return;
+      }
+
+      const technician = await this.technicianService.getTechnicianProfile(id);
+
+      if (!technician) {
+        res.status(404).json({
+          error: "Técnico no encontrado",
+        });
+        return;
+      }
+
+      res.status(200).json(technician);
+    } catch (error) {
+      console.error(`Error al obtener perfil del técnico (${req.params.id}):`, error);
+      res.status(500).json({
+        error: "Ocurrió un error interno al procesar la solicitud.",
+      });
+    }
+  };
 }

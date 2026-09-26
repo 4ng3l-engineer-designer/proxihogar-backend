@@ -8,4 +8,7 @@ const technicianController = new TechnicianController();
 // GET /api/technicians/nearby?lat=-12.2745&lng=-76.8711&radius=10
 router.get("/nearby", technicianController.getNearby);
 
+// GET /api/technicians/:id
+router.get("/:id", technicianController.getById);
+
 export default router;

@@ -30,6 +30,24 @@ export interface TecnicoResponse {
   resenas: ResenaResponse[];
 }
 
+export interface TecnicoProfileResponse {
+  id: string;
+  nombre: string;
+  iniciales: string;
+  colorAvatar: string;
+  especialidad: string;
+  especialidades: string[];
+  descripcion: string;
+  verificado: boolean;
+  calificacion: number;
+  cantidadResenas: number;
+  cantidadTrabajos: number;
+  tarifaBase: number;
+  ubicacion: string;
+  experienciaAnios: number;
+  resenas: ResenaResponse[];
+}
+
 export interface NearbyQueryParams {
   lat: number;
   lng: number;

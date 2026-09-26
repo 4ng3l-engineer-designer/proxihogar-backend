@@ -1,6 +1,6 @@
 // src/services/technician.service.ts
 import { TechnicianRepository } from "../repositories/technician.repository";
-import { NearbyQueryParams, TecnicoResponse } from "../types/technician.types";
+import { NearbyQueryParams, TecnicoProfileResponse, TecnicoResponse } from "../types/technician.types";
 import { calculateHaversineDistance, estimateArrivalTime } from "../utils/haversine";
 
 export class TechnicianService {
@@ -62,5 +62,45 @@ export class TechnicianService {
 
     // 3. Ordenar por distancia ascendente
     return nearbyList.sort((a, b) => a.distanceKm - b.distanceKm);
+  }
+
+  async getTechnicianProfile(id: string): Promise<TecnicoProfileResponse | null> {
+    const tech = await this.technicianRepository.findByIdWithReviews(id);
+
+    if (!tech) {
+      return null;
+    }
+
+    const formattedReviews = tech.resenas.map((r) => ({
+      id: r.id,
+      autor: r.autor,
+      iniciales: r.iniciales,
+      calificacion: r.calificacion,
+      comentario: r.comentario,
+      fecha: r.createdAt.toLocaleDateString("es-PE", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }),
+      tags: r.tags,
+    }));
+
+    return {
+      id: tech.id,
+      nombre: tech.nombre,
+      iniciales: tech.iniciales,
+      colorAvatar: tech.colorAvatar,
+      especialidad: tech.especialidad,
+      especialidades: tech.especialidades,
+      descripcion: tech.descripcion,
+      verificado: tech.verificado,
+      calificacion: tech.calificacion,
+      cantidadResenas: tech.cantidadResenas,
+      cantidadTrabajos: tech.cantidadTrabajos,
+      tarifaBase: tech.tarifaBase,
+      ubicacion: tech.ubicacion,
+      experienciaAnios: tech.experienciaAnios,
+      resenas: formattedReviews,
+    };
   }
 }

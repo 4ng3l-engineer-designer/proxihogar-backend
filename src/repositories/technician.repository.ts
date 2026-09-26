@@ -26,4 +26,18 @@ export class TechnicianRepository {
       },
     });
   }
+
+  /**
+   * Obtiene el perfil completo de un técnico por ID con sus reseñas ordenadas por fecha descendente.
+   */
+  async findByIdWithReviews(id: string): Promise<TechnicianWithReviews | null> {
+    return prisma.technician.findUnique({
+      where: { id },
+      include: {
+        resenas: {
+          orderBy: { createdAt: "desc" },
+        },
+      },
+    });
+  }
 }
