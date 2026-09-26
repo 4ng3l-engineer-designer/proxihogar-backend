@@ -7,7 +7,7 @@ export class TechnicianService {
   constructor(private readonly technicianRepository = new TechnicianRepository()) {}
 
   async getNearbyTechnicians(params: NearbyQueryParams): Promise<TecnicoResponse[]> {
-    const { lat, lng, radiusKm } = params;
+    const { lat, lng, radiusKm, especialidad, verificado, calificacionMin, tarifaMax } = params;
 
     // 1. Obtener técnicos disponibles de la base de datos
     const technicians = await this.technicianRepository.findAvailableTechnicians();
@@ -18,11 +18,37 @@ export class TechnicianService {
 
     const nearbyList: TecnicoResponse[] = [];
 
-    // 2. Calcular distancia con Haversine y filtrar dentro del radio
+    // 2. Calcular distancia con Haversine y filtrar dentro del radio y criterios opcionales
     for (const tech of technicians) {
       const distance = calculateHaversineDistance(lat, lng, tech.latitude, tech.longitude);
 
       if (distance <= radiusKm) {
+        // Filtro opcional: especialidad (coincidencia en especialidad principal o en array especialidades)
+        if (especialidad) {
+          const espQuery = especialidad.toLowerCase();
+          const matchesPrincipal = tech.especialidad.toLowerCase().includes(espQuery);
+          const matchesLista = tech.especialidades.some((esp) => esp.toLowerCase().includes(espQuery));
+
+          if (!matchesPrincipal && !matchesLista) {
+            continue;
+          }
+        }
+
+        // Filtro opcional: verificado
+        if (verificado === true && tech.verificado !== true) {
+          continue;
+        }
+
+        // Filtro opcional: calificación mínima
+        if (calificacionMin !== undefined && tech.calificacion < calificacionMin) {
+          continue;
+        }
+
+        // Filtro opcional: tarifa máxima
+        if (tarifaMax !== undefined && tech.tarifaBase > tarifaMax) {
+          continue;
+        }
+
         // Formatear reseñas respetando la interfaz Resena
         const formattedReviews = tech.resenas.map((r) => ({
           id: r.id,

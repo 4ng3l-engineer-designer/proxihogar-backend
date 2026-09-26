@@ -52,4 +52,8 @@ export interface NearbyQueryParams {
   lat: number;
   lng: number;
   radiusKm: number;
+  especialidad?: string;
+  verificado?: boolean;
+  calificacionMin?: number;
+  tarifaMax?: number;
 }

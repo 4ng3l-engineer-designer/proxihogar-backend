@@ -7,7 +7,7 @@ export class TechnicianController {
 
   getNearby = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { lat, lng, radius } = req.query;
+      const { lat, lng, radius, especialidad, verificado, calificacionMin, tarifaMax } = req.query;
 
       // Validación: lat y lng son obligatorios
       if (lat === undefined || lng === undefined || lat === "" || lng === "") {
@@ -49,10 +49,51 @@ export class TechnicianController {
         }
       }
 
+      // Parsear filtros opcionales
+      let parsedEspecialidad: string | undefined;
+      if (typeof especialidad === "string" && especialidad.trim() !== "") {
+        parsedEspecialidad = especialidad.trim();
+      }
+
+      let parsedVerificado: boolean | undefined;
+      if (verificado === "true") {
+        parsedVerificado = true;
+      } else if (verificado === "false") {
+        parsedVerificado = false;
+      }
+
+      let parsedCalificacionMin: number | undefined;
+      if (calificacionMin !== undefined && calificacionMin !== "") {
+        const parsed = parseFloat(calificacionMin as string);
+        if (isNaN(parsed) || parsed < 0 || parsed > 5) {
+          res.status(400).json({
+            error: "El parámetro 'calificacionMin' debe ser un número válido entre 0 y 5.",
+          });
+          return;
+        }
+        parsedCalificacionMin = parsed;
+      }
+
+      let parsedTarifaMax: number | undefined;
+      if (tarifaMax !== undefined && tarifaMax !== "") {
+        const parsed = parseFloat(tarifaMax as string);
+        if (isNaN(parsed) || parsed < 0) {
+          res.status(400).json({
+            error: "El parámetro 'tarifaMax' debe ser un número positivo válido.",
+          });
+          return;
+        }
+        parsedTarifaMax = parsed;
+      }
+
       const technicians = await this.technicianService.getNearbyTechnicians({
         lat: parsedLat,
         lng: parsedLng,
         radiusKm,
+        especialidad: parsedEspecialidad,
+        verificado: parsedVerificado,
+        calificacionMin: parsedCalificacionMin,
+        tarifaMax: parsedTarifaMax,
       });
 
       // Retorna 200 con el array (vacío si no hay técnicos cerca)
