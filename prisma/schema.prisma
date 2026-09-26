@@ -1,0 +1,159 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ── ENUMS ──
+
+enum Role {
+  CLIENT
+  WORKER
+}
+
+enum RequestStatus {
+  PENDING
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// ── USUARIO Y AUTENTICACIÓN ──
+
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  password      String         // Hash bcrypt
+  nombre        String
+  role          Role           @default(CLIENT)
+  dniRuc        String?
+  telefono      String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  // Relaciones
+  technician    Technician?    // Si el rol es WORKER
+  requests      Request[]      // Solicitudes creadas como cliente
+  reviews       Review[]       // Reseñas emitidas como cliente
+
+  @@map("users")
+}
+
+// ── CATEGORÍAS Y SERVICIOS ──
+
+model Category {
+  id               String       @id @default(uuid())
+  nombre           String
+  slug             String       @unique
+  icono            String
+  color            String
+  descripcion      String
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  // Relaciones
+  servicios        Service[]
+  technicians      Technician[]
+
+  @@map("categories")
+}
+
+model Service {
+  id           String    @id @default(uuid())
+  nombre       String
+  descripcion  String
+  categoriaId  String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relaciones
+  category     Category  @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
+
+  @@map("services")
+}
+
+// ── TÉCNICO / PROFESIONAL ──
+
+model Technician {
+  id               String      @id @default(uuid())
+  userId           String      @unique
+  nombre           String
+  iniciales        String
+  colorAvatar      String      @default("#0B192C")
+  especialidad     String      // Ej: "Electricista", "Gasfitero"
+  especialidades   String[]    // Tags / habilidades
+  descripcion      String
+  verificado       Boolean     @default(false)
+  calificacion     Float       @default(5.0)
+  cantidadResenas  Int         @default(0)
+  cantidadTrabajos Int         @default(0)
+  tarifaBase       Float
+  ubicacion        String      // Ej: "Lurín, Lima"
+  latitude         Float
+  longitude        Float
+  disponible       Boolean     @default(true)
+  experienciaAnios Int
+  categoriaId      String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  // Relaciones
+  user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category         Category?   @relation(fields: [categoriaId], references: [id])
+  resenas          Review[]
+  solicitudes      Request[]
+
+  @@index([disponible])
+  @@index([latitude, longitude])
+  @@map("technicians")
+}
+
+// ── RESEÑAS ──
+
+model Review {
+  id            String      @id @default(uuid())
+  autor         String
+  iniciales     String
+  calificacion  Int
+  comentario    String
+  tags          String[]
+  technicianId  String
+  clientId      String?
+  createdAt     DateTime    @default(now())
+
+  // Relaciones
+  technician    Technician  @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  client        User?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@map("reviews")
+}
+
+// ── SOLICITUD DE SERVICIO (CONTRATACIÓN) ──
+
+model Request {
+  id            String         @id @default(uuid())
+  clientId      String
+  technicianId  String
+  direccion     String
+  tipoProblema  String
+  descripcion   String
+  radio         String         @default("5km")
+  status        RequestStatus  @default(PENDING)
+  latitude      Float?
+  longitude     Float?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  // Relaciones
+  client        User           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  technician    Technician     @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+
+  @@map("requests")
+}
