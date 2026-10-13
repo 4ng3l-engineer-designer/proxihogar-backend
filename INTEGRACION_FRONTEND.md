@@ -60,8 +60,10 @@ export interface TecnicoApi {
   calificacion: number;
   cantidadResenas: number;
   cantidadTrabajos: number;
-  distanceKm?: number;      // Solo presente en /api/technicians/nearby
-  tiempoLlegada?: string;   // Solo presente en /api/technicians/nearby
+  distanceKm?: number;      // Presente en /nearby o en /:id si se envían lat/lng
+  distanciaTexto?: string;  // Presente en /nearby o en /:id si se envían lat/lng (ej: "2.5 km" o "850 m")
+  tiempoLlegada?: string;   // Presente en /nearby o en /:id si se envían lat/lng (ej: "15 min", "1 h 15 min")
+  calculoAproximado?: boolean; // true cuando se calcula la distancia y tiempo
   tarifaBase: number;
   ubicacion: string;
   experienciaAnios: number;
@@ -115,8 +117,20 @@ export async function getTecnicosCercanos(
   return res.json();
 }
 
-export async function getTecnicoPorId(id: string): Promise<TecnicoApi | null> {
-  const res = await fetch(`${API_URL}/api/technicians/${encodeURIComponent(id)}`);
+export async function getTecnicoPorId(
+  id: string,
+  userLocation?: { lat: number; lng: number }
+): Promise<TecnicoApi | null> {
+  let url = `${API_URL}/api/technicians/${encodeURIComponent(id)}`;
+  if (userLocation) {
+    const query = new URLSearchParams({
+      lat: String(userLocation.lat),
+      lng: String(userLocation.lng),
+    });
+    url += `?${query.toString()}`;
+  }
+
+  const res = await fetch(url);
 
   if (res.status === 404) {
     return null;
@@ -423,7 +437,7 @@ Marca cada punto al completar la integración:
    - Confirma que `API_URL` apunte a `https://proxihogar-backend-production.up.railway.app` y use `https://`.
 2. **Lista siempre vacía (`[]`):**
    - Comprueba que `lat` y `lng` sean números flotantes válidos dentro de Lima.
-   - En la base de datos de prueba actual existe 1 técnico configurado: **Juan Rios** en Lurín (`lat: -12.2745, lng: -76.8711`). Asegúrate de usar un radio suficiente (ej. 10 km o 15 km) desde tus coordenadas.
+   - En la base de datos de prueba actual existen **8 técnicos configurados** en Lima (Lurín, Villa El Salvador, Villa María del Triunfo, Pachacámac, San Juan de Miraflores, Santiago de Surco y Miraflores), 7 disponibles y 1 no disponible. Asegúrate de usar un radio suficiente (ej. 10 km o 15 km) desde tus coordenadas si estás alejado.
 3. **Error HTTP 400 (Bad Request):**
    - Revisa el mensaje devuelto en `{ "error": "..." }`. Generalmente ocurre si `lat` o `lng` faltan o tienen formatos no numéricos.
 4. **Campos `undefined` en pantalla:**

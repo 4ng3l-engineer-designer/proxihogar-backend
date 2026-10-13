@@ -26,7 +26,7 @@ GET /api/technicians/nearby
 | `calificacionMin` | number (0 a 5)        | No        | Calificación mínima                                      |
 | `tarifaMax`       | number positivo       | No        | Tarifa base máxima                                       |
 
-Los filtros son opcionales y combinables. Los resultados vienen ordenados por distancia ascendente.
+Los filtros son opcionales y combinables. Los resultados vienen ordenados por distancia ascendente. Solo se retornan técnicos con `disponible: true`.
 
 ### Ejemplo
 
@@ -40,22 +40,24 @@ Array de técnicos. Si no hay ninguno devuelve `[]` (no es un error).
 
 Campos de cada técnico:
 
-- `id`
-- `nombre`
-- `iniciales`
-- `colorAvatar`
-- `especialidad`
+- `id` (string)
+- `nombre` (string)
+- `iniciales` (string)
+- `colorAvatar` (string)
+- `especialidad` (string)
 - `especialidades` (`string[]`)
-- `descripcion`
-- `verificado`
-- `calificacion`
-- `cantidadResenas`
-- `cantidadTrabajos`
-- `distanceKm`
-- `tiempoLlegada`
-- `tarifaBase`
-- `ubicacion`
-- `experienciaAnios`
+- `descripcion` (string)
+- `verificado` (boolean)
+- `calificacion` (number)
+- `cantidadResenas` (number)
+- `cantidadTrabajos` (number)
+- `distanceKm` (number): distancia calculada con fórmula de Haversine en km
+- `distanciaTexto` (string): texto amigable de distancia (`"2.5 km"` o `"850 m"` si es menor a 1 km)
+- `tiempoLlegada` (string): tiempo estimado vehicular (`"15 min"`, `"1 h 15 min"` o `"2 h"`)
+- `calculoAproximado` (boolean): `true` (indica que el cálculo es lineal, sin ruta GPS en tiempo real)
+- `tarifaBase` (number)
+- `ubicacion` (string)
+- `experienciaAnios` (number)
 - `resenas`: array con `id`, `autor`, `iniciales`, `calificacion`, `comentario`, `fecha`, `tags`
 
 ### Errores
@@ -71,18 +73,40 @@ Campos de cada técnico:
 GET /api/technicians/:id
 ```
 
-### Ejemplo
+### Query params (opcionales)
 
-```
-/api/technicians/9837e9b0-0093-4ab1-9851-465a7031a941
-```
+| Parámetro | Tipo   | Requerido | Descripción                                                        |
+| --------- | ------ | --------- | ------------------------------------------------------------------ |
+| `lat`     | number | No        | Latitud del usuario para calcular distancia y tiempo (-90 a 90)    |
+| `lng`     | number | No        | Longitud del usuario para calcular distancia y tiempo (-180 a 180) |
+
+> **Nota:** Si se desea calcular la distancia y tiempo estimado hacia el técnico, `lat` y `lng` deben enviarse **juntos**. El tiempo de llegada es una estimación basada en distancia lineal vehicular.
+
+### Ejemplos
+
+- Sin ubicación:
+  ```
+  /api/technicians/9837e9b0-0093-4ab1-9851-465a7031a941
+  ```
+- Con ubicación del usuario:
+  ```
+  /api/technicians/9837e9b0-0093-4ab1-9851-465a7031a941?lat=-12.2745&lng=-76.8711
+  ```
 
 ### Respuesta 200
 
-Mismo objeto del técnico, **sin** `distanceKm` ni `tiempoLlegada`, con reseñas ordenadas de la más reciente a la más antigua.
+Objeto completo del perfil del técnico con reseñas ordenadas de la más reciente a la más antigua:
+
+- Campos base: `id`, `nombre`, `iniciales`, `colorAvatar`, `especialidad`, `especialidades`, `descripcion`, `verificado`, `calificacion`, `cantidadResenas`, `cantidadTrabajos`, `tarifaBase`, `ubicacion`, `experienciaAnios`, `resenas`.
+- Si se enviaron `lat` y `lng` válidos, se agregan:
+  - `distanceKm` (number)
+  - `distanciaTexto` (string: ej. `"2.5 km"` o `"850 m"`)
+  - `tiempoLlegada` (string: ej. `"15 min"`, `"1 h 15 min"`, `"2 h"`)
+  - `calculoAproximado` (boolean: `true`)
 
 ### Errores
 
+- **400**: si solo se envía uno de `lat`/`lng`, o si no son numéricos o están fuera de rango.
 - **404**: `{ "error": "Técnico no encontrado" }` si el id no existe.
 - **500**: error interno.
 
@@ -116,7 +140,9 @@ export interface TecnicoApi {
   cantidadResenas: number;
   cantidadTrabajos: number;
   distanceKm?: number;
+  distanciaTexto?: string;
   tiempoLlegada?: string;
+  calculoAproximado?: boolean;
   tarifaBase: number;
   ubicacion: string;
   experienciaAnios: number;
@@ -152,8 +178,20 @@ export async function getTecnicosCercanos(params: NearbyParams): Promise<Tecnico
   return res.json();
 }
 
-export async function getTecnicoPorId(id: string): Promise<TecnicoApi | null> {
-  const res = await fetch(`${API_URL}/api/technicians/${encodeURIComponent(id)}`);
+export async function getTecnicoPorId(
+  id: string,
+  userLocation?: { lat: number; lng: number }
+): Promise<TecnicoApi | null> {
+  let url = `${API_URL}/api/technicians/${encodeURIComponent(id)}`;
+  if (userLocation) {
+    const query = new URLSearchParams({
+      lat: String(userLocation.lat),
+      lng: String(userLocation.lng),
+    });
+    url += `?${query.toString()}`;
+  }
+
+  const res = await fetch(url);
 
   if (res.status === 404) {
     return null;
@@ -172,7 +210,8 @@ export async function getTecnicoPorId(id: string): Promise<TecnicoApi | null> {
 
 ## 4. Notas para frontend
 
-- El campo de distancia se llama `distanceKm`. Si el tipo del frontend usa otro nombre (por ejemplo `distanciaKm`), hay que mapearlo.
+- El campo numérico de distancia se llama `distanceKm` y el formateado `distanciaTexto`.
+- El campo `calculoAproximado: true` indica que la estimación es lineal (no por ruta vial en tiempo real).
 - La API necesita `lat` y `lng` numéricos: si el usuario elige un distrito, el frontend debe traducirlo a coordenadas o usar `expo-location`.
-- Datos de prueba: solo existe 1 técnico (**Juan Rios**, Lurín, lat `-12.2745`, lng `-76.8711`).
+- Datos de prueba: existen **8 técnicos de prueba** en la base de datos distribuidos en Lima (Lurín, Villa El Salvador, Villa María del Triunfo, Pachacámac, San Juan de Miraflores, Santiago de Surco y Miraflores), 7 de ellos disponibles y 1 no disponible.
 - La primera petición puede tardar unos segundos si el servidor estuvo inactivo.

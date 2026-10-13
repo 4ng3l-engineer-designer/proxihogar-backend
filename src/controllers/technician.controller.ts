@@ -117,7 +117,41 @@ export class TechnicianController {
         return;
       }
 
-      const technician = await this.technicianService.getTechnicianProfile(id);
+      const { lat, lng } = req.query;
+      const hasLat = lat !== undefined && lat !== "";
+      const hasLng = lng !== undefined && lng !== "";
+
+      if (hasLat !== hasLng) {
+        res.status(400).json({
+          error: "Los parámetros 'lat' y 'lng' deben enviarse juntos.",
+        });
+        return;
+      }
+
+      let userLocation: { lat: number; lng: number } | undefined;
+
+      if (hasLat && hasLng) {
+        const parsedLat = parseFloat(lat as string);
+        const parsedLng = parseFloat(lng as string);
+
+        if (isNaN(parsedLat) || isNaN(parsedLng)) {
+          res.status(400).json({
+            error: "Los parámetros 'lat' y 'lng' deben ser valores numéricos válidos.",
+          });
+          return;
+        }
+
+        if (parsedLat < -90 || parsedLat > 90 || parsedLng < -180 || parsedLng > 180) {
+          res.status(400).json({
+            error: "Coordenadas fuera de rango válido (-90 a 90 para lat, -180 a 180 para lng).",
+          });
+          return;
+        }
+
+        userLocation = { lat: parsedLat, lng: parsedLng };
+      }
+
+      const technician = await this.technicianService.getTechnicianProfile(id, userLocation);
 
       if (!technician) {
         res.status(404).json({

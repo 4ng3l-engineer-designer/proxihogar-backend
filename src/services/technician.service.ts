@@ -1,7 +1,7 @@
 // src/services/technician.service.ts
 import { TechnicianRepository } from "../repositories/technician.repository";
 import { NearbyQueryParams, TecnicoProfileResponse, TecnicoResponse } from "../types/technician.types";
-import { calculateHaversineDistance, estimateArrivalTime } from "../utils/haversine";
+import { calculateHaversineDistance, estimateArrivalTime, formatDistance } from "../utils/haversine";
 
 export class TechnicianService {
   constructor(private readonly technicianRepository = new TechnicianRepository()) {}
@@ -77,7 +77,9 @@ export class TechnicianService {
           cantidadResenas: tech.cantidadResenas,
           cantidadTrabajos: tech.cantidadTrabajos,
           distanceKm: distance,
+          distanciaTexto: formatDistance(distance),
           tiempoLlegada: estimateArrivalTime(distance),
+          calculoAproximado: true,
           tarifaBase: tech.tarifaBase,
           ubicacion: tech.ubicacion,
           experienciaAnios: tech.experienciaAnios,
@@ -90,7 +92,10 @@ export class TechnicianService {
     return nearbyList.sort((a, b) => a.distanceKm - b.distanceKm);
   }
 
-  async getTechnicianProfile(id: string): Promise<TecnicoProfileResponse | null> {
+  async getTechnicianProfile(
+    id: string,
+    userLocation?: { lat: number; lng: number }
+  ): Promise<TecnicoProfileResponse | null> {
     const tech = await this.technicianRepository.findByIdWithReviews(id);
 
     if (!tech) {
@@ -111,7 +116,7 @@ export class TechnicianService {
       tags: r.tags,
     }));
 
-    return {
+    const profile: TecnicoProfileResponse = {
       id: tech.id,
       nombre: tech.nombre,
       iniciales: tech.iniciales,
@@ -128,5 +133,20 @@ export class TechnicianService {
       experienciaAnios: tech.experienciaAnios,
       resenas: formattedReviews,
     };
+
+    if (userLocation) {
+      const distance = calculateHaversineDistance(
+        userLocation.lat,
+        userLocation.lng,
+        tech.latitude,
+        tech.longitude
+      );
+      profile.distanceKm = distance;
+      profile.distanciaTexto = formatDistance(distance);
+      profile.tiempoLlegada = estimateArrivalTime(distance);
+      profile.calculoAproximado = true;
+    }
+
+    return profile;
   }
 }

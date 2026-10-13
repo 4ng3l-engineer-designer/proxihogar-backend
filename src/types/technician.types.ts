@@ -23,7 +23,9 @@ export interface TecnicoResponse {
   cantidadResenas: number;
   cantidadTrabajos: number;
   distanceKm: number; // Campo único de distancia (sin duplicados)
+  distanciaTexto?: string;
   tiempoLlegada: string;
+  calculoAproximado?: boolean;
   tarifaBase: number;
   ubicacion: string;
   experienciaAnios: number;
@@ -46,6 +48,10 @@ export interface TecnicoProfileResponse {
   ubicacion: string;
   experienciaAnios: number;
   resenas: ResenaResponse[];
+  distanceKm?: number;
+  distanciaTexto?: string;
+  tiempoLlegada?: string;
+  calculoAproximado?: boolean;
 }
 
 export interface NearbyQueryParams {
