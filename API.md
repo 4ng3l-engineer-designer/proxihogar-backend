@@ -2,9 +2,106 @@
 
 **Base URL (producción):** `https://proxihogar-backend-production.up.railway.app`
 
-- Sin autenticación por ahora.
-- CORS abierto.
+- Autenticación: Mediante JWT en el header `Authorization: Bearer <token>` para rutas protegidas.
+- Rutas públicas por ahora: `/api/technicians/nearby` y `/api/technicians/:id` (se consumen sin token).
+- Rate Limit: Endpoints de autenticación (`/register` y `/login`) limitados a 10 peticiones cada 15 minutos por IP.
+- CORS abierto y protección de cabeceras con Helmet.
 - Todos los errores devuelven `{ "error": "mensaje" }`.
+
+---
+
+## 0. Autenticación (`/api/auth`)
+
+### 0.1 Registro de usuario
+```
+POST /api/auth/register
+```
+
+**Body (JSON):**
+| Campo | Tipo | Requerido | Descripción |
+| :--- | :--- | :--- | :--- |
+| `email` | string | Sí | Correo electrónico válido (se normaliza a minúsculas) |
+| `password` | string | Sí | Contraseña con mínimo 8 caracteres |
+| `nombre` | string | Sí | Nombre del usuario (no vacío) |
+| `telefono` | string | No | Número de teléfono |
+| `role` | string | No | `"CLIENT"` o `"WORKER"` (por defecto `"CLIENT"`) |
+
+**Respuesta 201 Created:**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6...",
+  "user": {
+    "id": "uuid-generado",
+    "email": "usuario@test.com",
+    "nombre": "Juan Pérez",
+    "role": "CLIENT"
+  }
+}
+```
+
+**Errores:**
+- **400 Bad Request:** Validaciones fallidas (nombre vacío, email inválido, contraseña menor a 8 caracteres o rol no permitido).
+- **409 Conflict:** El correo electrónico ya se encuentra registrado.
+- **429 Too Many Requests:** Excedido el límite de 10 intentos por IP en 15 minutos.
+
+---
+
+### 0.2 Inicio de sesión
+```
+POST /api/auth/login
+```
+
+**Body (JSON):**
+| Campo | Tipo | Requerido | Descripción |
+| :--- | :--- | :--- | :--- |
+| `email` | string | Sí | Correo electrónico registrado |
+| `password` | string | Sí | Contraseña |
+
+**Respuesta 200 OK:**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6...",
+  "user": {
+    "id": "uuid-usuario",
+    "email": "usuario@test.com",
+    "nombre": "Juan Pérez",
+    "role": "CLIENT"
+  }
+}
+```
+
+**Errores:**
+- **401 Unauthorized:** `"Credenciales inválidas"` (se retorna el mismo mensaje si el usuario no existe o si la contraseña no coincide).
+- **429 Too Many Requests:** Excedido el límite de 10 intentos por IP en 15 minutos.
+
+---
+
+### 0.3 Perfil del usuario autenticado
+```
+GET /api/auth/me
+```
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Respuesta 200 OK:**
+```json
+{
+  "id": "uuid-usuario",
+  "email": "usuario@test.com",
+  "nombre": "Juan Pérez",
+  "role": "CLIENT",
+  "dniRuc": null,
+  "telefono": null,
+  "createdAt": "2026-10-19T14:23:48.858Z",
+  "updatedAt": "2026-10-19T14:23:48.858Z"
+}
+```
+
+**Errores:**
+- **401 Unauthorized:** Token faltante, inválido o expirado.
 
 ---
 

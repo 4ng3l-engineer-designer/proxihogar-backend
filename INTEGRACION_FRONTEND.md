@@ -149,6 +149,161 @@ export async function getTecnicoPorId(
 
 ---
 
+## Paso 3.1: Autenticación con JWT y almacenamiento seguro (`expo-secure-store`)
+
+El backend implementa autenticación basada en JWT (`/api/auth`). Para guardar el token de sesión de forma segura y encriptada en el dispositivo móvil (Keychain en iOS y Keystore en Android), se recomienda utilizar `expo-secure-store`.
+
+### 1. Instalar `expo-secure-store` en la app de Expo
+
+Ejecuta en la terminal de la app de frontend:
+
+```bash
+npx expo install expo-secure-store
+```
+
+### 2. Crear el helper de almacenamiento seguro (`src/services/authStorage.ts`)
+
+```typescript
+// src/services/authStorage.ts
+import * as SecureStore from "expo-secure-store";
+
+const TOKEN_KEY = "proxihogar_auth_token";
+
+export async function saveAuthToken(token: string): Promise<void> {
+  await SecureStore.setItemAsync(TOKEN_KEY, token);
+}
+
+export async function getAuthToken(): Promise<string | null> {
+  return await SecureStore.getItemAsync(TOKEN_KEY);
+}
+
+export async function removeAuthToken(): Promise<void> {
+  await SecureStore.deleteItemAsync(TOKEN_KEY);
+}
+```
+
+### 3. Crear los servicios de autenticación (`src/services/auth.ts`)
+
+```typescript
+// src/services/auth.ts
+import { API_URL } from "../constants/api";
+import { saveAuthToken, getAuthToken, removeAuthToken } from "./authStorage";
+
+export interface UserResponse {
+  id: string;
+  email: string;
+  nombre: string;
+  role: "CLIENT" | "WORKER";
+}
+
+export interface AuthResponse {
+  token: string;
+  user: UserResponse;
+}
+
+export interface UserProfile extends UserResponse {
+  dniRuc?: string | null;
+  telefono?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Registro
+export async function registerUser(data: {
+  email: string;
+  password: string;
+  nombre: string;
+  telefono?: string;
+  role?: "CLIENT" | "WORKER";
+}): Promise<AuthResponse> {
+  const res = await fetch(`${API_URL}/api/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+
+  const body = await res.json();
+  if (!res.ok) {
+    throw new Error(body.error || "Error al registrar usuario");
+  }
+
+  // Guardar token en SecureStore
+  await saveAuthToken(body.token);
+  return body;
+}
+
+// Login
+export async function loginUser(credentials: {
+  email: string;
+  password: string;
+}): Promise<AuthResponse> {
+  const res = await fetch(`${API_URL}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(credentials),
+  });
+
+  const body = await res.json();
+  if (!res.ok) {
+    throw new Error(body.error || "Credenciales inválidas");
+  }
+
+  // Guardar token en SecureStore
+  await saveAuthToken(body.token);
+  return body;
+}
+
+// Obtener perfil actual (GET /api/auth/me) con Bearer token
+export async function getMyProfile(): Promise<UserProfile> {
+  const token = await getAuthToken();
+  if (!token) {
+    throw new Error("No hay sesión activa.");
+  }
+
+  const res = await fetch(`${API_URL}/api/auth/me`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (res.status === 401) {
+    await removeAuthToken(); // Token expirado o inválido
+    throw new Error("Sesión expirada. Inicia sesión nuevamente.");
+  }
+
+  const body = await res.json();
+  if (!res.ok) {
+    throw new Error(body.error || "Error al obtener perfil");
+  }
+
+  return body;
+}
+
+// Cerrar sesión
+export async function logoutUser(): Promise<void> {
+  await removeAuthToken();
+}
+```
+
+### 4. Cómo enviar el token en peticiones protegidas
+
+Para enviar el token a cualquier endpoint protegido que agregues en el futuro:
+
+```typescript
+const token = await getAuthToken();
+
+const res = await fetch(`${API_URL}/api/ruta-protegida`, {
+  headers: {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  },
+});
+```
+
+---
+
 ## Paso 4: Conectar el Home (src/app/(solicitante)/home.tsx)
 
 Sustituye la importación de `tecnicos` de mock data por una llamada al servicio con manejo de estados:
