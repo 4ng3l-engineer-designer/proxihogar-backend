@@ -15,6 +15,7 @@ export interface TecnicoAsignadoResponse {
   id: string;
   nombre: string;
   iniciales: string;
+  fotoUrl: string | null;
   colorAvatar: string;
   especialidad: string;
   verificado: boolean;
@@ -22,6 +23,7 @@ export interface TecnicoAsignadoResponse {
   cantidadResenas: number;
   experienciaAnios: number;
   telefono: string | null;
+  disponible: boolean;
   tarifaBase: number | null;
   moneda: string;
   tarifaTexto: string;

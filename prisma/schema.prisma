@@ -86,6 +86,7 @@ model Technician {
   userId           String      @unique
   nombre           String
   iniciales        String
+  fotoUrl          String?
   colorAvatar      String      @default("#0B192C")
   especialidad     String      // Ej: "Electricista", "Gasfitero"
   especialidades   String[]    // Tags / habilidades

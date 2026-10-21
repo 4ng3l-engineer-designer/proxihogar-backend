@@ -14,6 +14,7 @@ export interface TecnicoResponse {
   id: string;
   nombre: string;
   iniciales: string;
+  fotoUrl: string | null;
   colorAvatar: string;
   especialidad: string;
   especialidades: string[];
@@ -40,6 +41,7 @@ export interface TecnicoProfileResponse {
   id: string;
   nombre: string;
   iniciales: string;
+  fotoUrl: string | null;
   colorAvatar: string;
   especialidad: string;
   especialidades: string[];

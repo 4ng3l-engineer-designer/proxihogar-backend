@@ -140,6 +140,7 @@ Campos de cada técnico:
 - `id` (string)
 - `nombre` (string)
 - `iniciales` (string)
+- `fotoUrl` (string | null): URL de la fotografía del técnico o `null` si no tiene foto cargada
 - `colorAvatar` (string)
 - `especialidad` (string)
 - `especialidades` (`string[]`)
@@ -198,7 +199,7 @@ GET /api/technicians/:id
 
 Objeto completo del perfil del técnico con reseñas ordenadas de la más reciente a la más antigua:
 
-- Campos base: `id`, `nombre`, `iniciales`, `colorAvatar`, `especialidad`, `especialidades`, `descripcion`, `verificado`, `calificacion`, `cantidadResenas`, `cantidadTrabajos`, `tarifaBase` (number | null), `moneda` (string), `tarifaTexto` (string), `ubicacion`, `experienciaAnios`, `latitude`, `longitude`, `resenas`.
+- Campos base: `id`, `nombre`, `iniciales`, `fotoUrl` (string | null), `colorAvatar`, `especialidad`, `especialidades`, `descripcion`, `verificado`, `calificacion`, `cantidadResenas`, `cantidadTrabajos`, `tarifaBase` (number | null), `moneda` (string), `tarifaTexto` (string), `ubicacion`, `experienciaAnios`, `latitude`, `longitude`, `resenas`.
 - Si se enviaron `lat` y `lng` válidos, se agregan:
   - `distanceKm` (number)
   - `distanciaTexto` (string: ej. `"2.5 km"` o `"850 m"`)
@@ -281,6 +282,7 @@ POST /api/requests
     "id": "9837e9b0-0093-4ab1-9851-465a7031a941",
     "nombre": "Juan Rios",
     "iniciales": "JR",
+    "fotoUrl": null,
     "colorAvatar": "#0B192C",
     "especialidad": "Electricista",
     "verificado": true,
@@ -288,6 +290,7 @@ POST /api/requests
     "cantidadResenas": 142,
     "experienciaAnios": 8,
     "telefono": "987654321",
+    "disponible": true,
     "tarifaBase": 30,
     "moneda": "PEN",
     "tarifaTexto": "S/ 30.00",
@@ -360,6 +363,7 @@ export interface TecnicoApi {
   id: string;
   nombre: string;
   iniciales: string;
+  fotoUrl: string | null;
   colorAvatar: string;
   especialidad: string;
   especialidades: string[];
@@ -443,6 +447,8 @@ export async function getTecnicoPorId(
 
 ## 6. Notas para frontend
 
+- El campo `fotoUrl` puede ser una URL `string` o `null`. Si es `null`, el frontend debe renderizar las iniciales del técnico sobre un círculo con el color especificado en `colorAvatar`.
+- El objeto `tecnico` en las respuestas de solicitudes (`/api/requests`) incluye `disponible: boolean` para mostrar si el profesional se encuentra en línea / disponible (útil en cabeceras de chat y pantallas de seguimiento).
 - El campo numérico de distancia se llama `distanceKm` y el formateado `distanciaTexto`.
 - El campo `calculoAproximado: true` indica que la estimación es lineal (no por ruta vial en tiempo real).
 - El campo `tarifaTexto` ya viene formateado con el símbolo de moneda (`"S/ 30.00"`) o `"Tarifa a convenir"` si `tarifaBase` es `null`. Se recomienda mostrar directamente `tarifaTexto` en las tarjetas sin concatenar la moneda manualmente.

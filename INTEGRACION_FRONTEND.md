@@ -52,6 +52,7 @@ export interface TecnicoApi {
   id: string;
   nombre: string;
   iniciales: string;
+  fotoUrl: string | null;   // URL de foto o null si no tiene
   colorAvatar: string;
   especialidad: string;
   especialidades: string[];
@@ -635,6 +636,7 @@ export interface TecnicoAsignado {
   id: string;
   nombre: string;
   iniciales: string;
+  fotoUrl: string | null;
   colorAvatar: string;
   especialidad: string;
   verificado: boolean;
@@ -642,6 +644,7 @@ export interface TecnicoAsignado {
   cantidadResenas: number;
   experienciaAnios: number;
   telefono: string | null;
+  disponible: boolean;
   tarifaBase: number | null;
   moneda: string;
   tarifaTexto: string;
@@ -748,6 +751,114 @@ export default function SeguimientoScreen() {
           <Text className="text-white font-bold">Llamar al técnico ({tecnico.telefono})</Text>
         </TouchableOpacity>
       )}
+    </View>
+  );
+}
+```
+
+---
+
+## Cabecera del chat (C38)
+
+La pantalla de chat (ej. `src/app/(solicitante)/chat/[id].tsx` o modal de mensajería) recibe el `id` de la solicitud y consulta sus datos mediante `GET /api/requests/:id` para pintar la información del técnico en la barra superior o cabecera.
+
+### 1. Consumo del endpoint
+
+Se utiliza la función `getSolicitudPorId(id)` (ver sección [Seguimiento (C33)](#seguimiento-c33)). En la respuesta, dentro del objeto `tecnico`, se obtienen los datos requeridos:
+- `fotoUrl`: URL de la foto de perfil del técnico o `null`.
+- `colorAvatar`: Color hexadecimal para el fondo del avatar (ej. `"#0B192C"`).
+- `iniciales`: Iniciales del técnico para el avatar de respaldo (ej. `"JR"`).
+- `nombre`: Nombre del técnico asignado.
+- `especialidad`: Oficio principal (ej. `"Electricista"`).
+- `disponible`: Valor booleano (`true` o `false`) que indica si el técnico está disponible / en línea.
+
+### 2. Lógica visual: Avatar y Estado
+
+- **Avatar:** Si `fotoUrl` no es `null`, se muestra el componente de imagen con la URL. Si `fotoUrl` es `null`, se renderizan las `iniciales` en texto blanco sobre un círculo con fondo `colorAvatar`.
+- **Estado de conexión:** Se representa mediante el booleano `disponible`. Si es `true`, se muestra el indicador "En línea" (punto verde); si es `false`, se muestra "Desconectado" (punto gris).
+
+### 3. Ejemplo de componente `ChatHeader.tsx`
+
+```tsx
+import React, { useEffect, useState } from "react";
+import { View, Text, Image, ActivityIndicator, TouchableOpacity } from "react-native";
+import { useRouter } from "expo-router";
+import { getSolicitudPorId, SolicitudDetalle } from "@/services/api";
+
+interface ChatHeaderProps {
+  solicitudId: string;
+}
+
+export function ChatHeader({ solicitudId }: ChatHeaderProps) {
+  const router = useRouter();
+  const [solicitud, setSolicitud] = useState<SolicitudDetalle | null>(null);
+  const [cargando, setCargando] = useState(true);
+
+  useEffect(() => {
+    if (solicitudId) {
+      getSolicitudPorId(solicitudId)
+        .then(setSolicitud)
+        .catch(console.error)
+        .finally(() => setCargando(false));
+    }
+  }, [solicitudId]);
+
+  if (cargando) {
+    return (
+      <View className="h-16 flex-row items-center px-4 bg-white border-b border-slate-100">
+        <ActivityIndicator size="small" color="#2563EB" />
+        <Text className="ml-3 text-slate-400 text-sm">Cargando técnico...</Text>
+      </View>
+    );
+  }
+
+  if (!solicitud) return null;
+
+  const { tecnico } = solicitud;
+
+  return (
+    <View className="h-16 flex-row items-center px-4 bg-white border-b border-slate-200">
+      {/* Botón Volver */}
+      <TouchableOpacity onPress={() => router.back()} className="mr-3">
+        <Text className="text-blue-600 text-lg font-bold">←</Text>
+      </TouchableOpacity>
+
+      {/* Avatar: Imagen si hay fotoUrl, o Iniciales sobre colorAvatar */}
+      <View className="relative mr-3">
+        {tecnico.fotoUrl ? (
+          <Image
+            source={{ uri: tecnico.fotoUrl }}
+            className="w-10 h-10 rounded-full"
+          />
+        ) : (
+          <View
+            style={{ backgroundColor: tecnico.colorAvatar }}
+            className="w-10 h-10 rounded-full items-center justify-center"
+          >
+            <Text className="text-white font-bold text-sm">{tecnico.iniciales}</Text>
+          </View>
+        )}
+
+        {/* Indicador visual de estado disponible */}
+        <View
+          className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${
+            tecnico.disponible ? "bg-green-500" : "bg-slate-400"
+          }`}
+        />
+      </View>
+
+      {/* Datos del Técnico y Disponibilidad */}
+      <View className="flex-1">
+        <Text className="text-base font-bold text-slate-800" numberOfLines={1}>
+          {tecnico.nombre}
+        </Text>
+        <Text className="text-xs text-slate-500">
+          {tecnico.especialidad} •{" "}
+          <Text className={tecnico.disponible ? "text-green-600 font-medium" : "text-slate-400"}>
+            {tecnico.disponible ? "En línea" : "Desconectado"}
+          </Text>
+        </Text>
+      </View>
     </View>
   );
 }

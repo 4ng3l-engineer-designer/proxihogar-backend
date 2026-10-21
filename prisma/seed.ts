@@ -138,6 +138,7 @@ async function main() {
     nombre: "Juan Rios",
     iniciales: "JR",
     colorAvatar: "#0B192C",
+    fotoUrl: null,
     especialidad: "Electricista",
     especialidades: [
       "Instalación eléctrica",
@@ -214,6 +215,7 @@ async function main() {
     nombre: "Carlos Mamani",
     iniciales: "CM",
     colorAvatar: "#1E3A8A",
+    fotoUrl: null,
     especialidad: "Gasfitero",
     especialidades: [
       "Reparación de tuberías",
@@ -290,6 +292,7 @@ async function main() {
     nombre: "Miguel Soto",
     iniciales: "MS",
     colorAvatar: "#0D9488",
+    fotoUrl: null,
     especialidad: "Gasfitero",
     especialidades: [
       "Instalación de bombas de agua",
@@ -344,6 +347,7 @@ async function main() {
     nombre: "Andrés Chu",
     iniciales: "AC",
     colorAvatar: "#4C1D95",
+    fotoUrl: null,
     especialidad: "Electricista",
     especialidades: [
       "Instalaciones trifásicas",
@@ -412,6 +416,7 @@ async function main() {
     nombre: "Raúl Huamán",
     iniciales: "RH",
     colorAvatar: "#B45309",
+    fotoUrl: null,
     especialidad: "Electricista",
     especialidades: [
       "Cableado estructurado",
@@ -466,6 +471,7 @@ async function main() {
     nombre: "Pedro Quispe",
     iniciales: "PQ",
     colorAvatar: "#065F46",
+    fotoUrl: null,
     especialidad: "Albañil",
     especialidades: [
       "Tarrajeo",
@@ -534,6 +540,7 @@ async function main() {
     nombre: "Walter Cárdenas",
     iniciales: "WC",
     colorAvatar: "#991B1B",
+    fotoUrl: null,
     especialidad: "Albañil",
     especialidades: [
       "Muros y divisiones",
@@ -588,6 +595,7 @@ async function main() {
     nombre: "Luis Fernández",
     iniciales: "LF",
     colorAvatar: "#C2410C",
+    fotoUrl: null,
     especialidad: "Pintor",
     especialidades: [
       "Pintura latex",
