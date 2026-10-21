@@ -83,6 +83,8 @@ export class TechnicianService {
           tarifaBase: tech.tarifaBase,
           ubicacion: tech.ubicacion,
           experienciaAnios: tech.experienciaAnios,
+          latitude: tech.latitude,
+          longitude: tech.longitude,
           resenas: formattedReviews,
         });
       }
@@ -131,6 +133,8 @@ export class TechnicianService {
       tarifaBase: tech.tarifaBase,
       ubicacion: tech.ubicacion,
       experienciaAnios: tech.experienciaAnios,
+      latitude: tech.latitude,
+      longitude: tech.longitude,
       resenas: formattedReviews,
     };
 

@@ -29,6 +29,8 @@ export interface TecnicoResponse {
   tarifaBase: number;
   ubicacion: string;
   experienciaAnios: number;
+  latitude: number;
+  longitude: number;
   resenas: ResenaResponse[];
 }
 
@@ -47,6 +49,8 @@ export interface TecnicoProfileResponse {
   tarifaBase: number;
   ubicacion: string;
   experienciaAnios: number;
+  latitude: number;
+  longitude: number;
   resenas: ResenaResponse[];
   distanceKm?: number;
   distanciaTexto?: string;

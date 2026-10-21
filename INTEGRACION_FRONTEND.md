@@ -67,6 +67,8 @@ export interface TecnicoApi {
   tarifaBase: number;
   ubicacion: string;
   experienciaAnios: number;
+  latitude: number;         // Latitud para ubicar el pin en el mapa (C28)
+  longitude: number;        // Longitud para ubicar el pin en el mapa (C28)
   resenas: ResenaApi[];
 }
 ```
@@ -143,6 +145,19 @@ export async function getTecnicoPorId(
     );
   }
 
+  return res.json();
+}
+
+export interface DistritosResponse {
+  default: { nombre: string; latitude: number; longitude: number };
+  distritos: Array<{ nombre: string; latitude: number; longitude: number }>;
+}
+
+export async function getDistritos(): Promise<DistritosResponse> {
+  const res = await fetch(`${API_URL}/api/districts`);
+  if (!res.ok) {
+    throw new Error(`Error ${res.status} al obtener distritos`);
+  }
   return res.json();
 }
 ```
@@ -530,17 +545,73 @@ async function obtenerCoordenadasActuales() {
 }
 ```
 
-### Opción B: Tabla de coordenadas fijas por distrito (Selector manual en `ubicacion.tsx`)
+### Opción B: Obtener distritos de la API (`/api/districts`)
 
-Para el selector de distritos sin GPS activo:
+Si no se dispone de GPS, la app puede consultar los distritos predefinidos:
 
-| Distrito | Latitud | Longitud | Observación |
-| :--- | :--- | :--- | :--- |
-| **Lurín** | `-12.2745` | `-76.8711` | Coordenadas base del técnico de prueba |
-| **Villa El Salvador** | `-12.2069` | `-76.9367` | Coordenadas aproximadas |
-| **Pachacámac** | `-12.2294` | `-76.8586` | Coordenadas aproximadas |
-| **Miraflores** | `-12.1211` | `-77.0298` | Coordenadas aproximadas |
-| **Surco** | `-12.1394` | `-76.9922` | Coordenadas aproximadas |
+```typescript
+const distritosData = await getDistritos();
+// distritosData.default -> { nombre: "Lima", latitude: -12.0464, longitude: -77.0428 }
+// distritosData.distritos -> lista de distritos para selector manual
+```
+
+---
+
+## Mapa (C28)
+
+En la pantalla de mapa (`src/app/(solicitante)/mapa.tsx` o similar), se integran la geolocalización, los distritos y los técnicos cercanos:
+
+### 1. Dibujar los pines de los técnicos
+Los pines se dibujan directamente con los campos `latitude` y `longitude` presentes en cada elemento del arreglo devuelto por `GET /api/technicians/nearby`:
+
+```tsx
+import MapView, { Marker } from "react-native-maps";
+
+<MapView
+  style={{ flex: 1 }}
+  region={{
+    latitude: centroMapa.latitude,
+    longitude: centroMapa.longitude,
+    latitudeDelta: 0.08,
+    longitudeDelta: 0.08,
+  }}
+>
+  {/* Pin de ubicación del usuario o distrito seleccionado */}
+  <Marker
+    coordinate={{ latitude: centroMapa.latitude, longitude: centroMapa.longitude }}
+    title="Ubicación de búsqueda"
+    pinColor="#2563EB"
+  />
+
+  {/* Pines de los técnicos en el radio */}
+  {tecnicos.map((tecnico) => (
+    <Marker
+      key={tecnico.id}
+      coordinate={{
+        latitude: tecnico.latitude,
+        longitude: tecnico.longitude,
+      }}
+      title={tecnico.nombre}
+      description={`${tecnico.especialidad} • ${tecnico.distanciaTexto || ""}`}
+      onPress={() => abrirDetalleTecnico(tecnico.id)}
+    />
+  ))}
+</MapView>
+```
+
+### 2. Centrado del mapa y gestión de permisos GPS (Escenarios C28)
+
+- **Escenario 1 (Permiso de GPS concedido):**
+  1. La app solicita permiso de geolocalización al arrancar con `expo-location`.
+  2. Al ser concedido, se obtiene la posición exacta (`coords.latitude`, `coords.longitude`).
+  3. El mapa se centra automáticamente en esas coordenadas.
+  4. Se consulta `GET /api/technicians/nearby?lat=${lat}&lng=${lng}&radius=10` para pintar los técnicos cercanos.
+
+- **Escenario 2 (Permiso de GPS denegado o no disponible):**
+  1. Si el usuario rechaza el acceso al GPS, la app consulta `GET /api/districts`.
+  2. El mapa se centra inicialmente en las coordenadas `default` (Lima: `-12.0464`, `-77.0428`).
+  3. Se muestra un banner o selector con la lista de `distritos` devuelta por la API para que el usuario elija su distrito manualmente.
+  4. Al seleccionar un distrito (ej. "Lurín" o "Miraflores"), el mapa se traslada al centro de dicho distrito y se consulta `/nearby` con las coordenadas aproximadas del distrito elegido.
 
 ---
 

@@ -4,6 +4,7 @@ import cors from "cors";
 import helmet from "helmet";
 import authRoutes from "./routes/auth.routes";
 import technicianRoutes from "./routes/technician.routes";
+import districtRoutes from "./routes/district.routes";
 
 const app: Application = express();
 
@@ -16,5 +17,6 @@ app.use(express.json());
 // Rutas
 app.use("/api/auth", authRoutes);
 app.use("/api/technicians", technicianRoutes);
+app.use("/api/districts", districtRoutes);
 
 export default app;

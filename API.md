@@ -155,6 +155,8 @@ Campos de cada técnico:
 - `tarifaBase` (number)
 - `ubicacion` (string)
 - `experienciaAnios` (number)
+- `latitude` (number): latitud del técnico (para ubicar pines en el mapa C28)
+- `longitude` (number): longitud del técnico (para ubicar pines en el mapa C28)
 - `resenas`: array con `id`, `autor`, `iniciales`, `calificacion`, `comentario`, `fecha`, `tags`
 
 ### Errores
@@ -194,7 +196,7 @@ GET /api/technicians/:id
 
 Objeto completo del perfil del técnico con reseñas ordenadas de la más reciente a la más antigua:
 
-- Campos base: `id`, `nombre`, `iniciales`, `colorAvatar`, `especialidad`, `especialidades`, `descripcion`, `verificado`, `calificacion`, `cantidadResenas`, `cantidadTrabajos`, `tarifaBase`, `ubicacion`, `experienciaAnios`, `resenas`.
+- Campos base: `id`, `nombre`, `iniciales`, `colorAvatar`, `especialidad`, `especialidades`, `descripcion`, `verificado`, `calificacion`, `cantidadResenas`, `cantidadTrabajos`, `tarifaBase`, `ubicacion`, `experienciaAnios`, `latitude`, `longitude`, `resenas`.
 - Si se enviaron `lat` y `lng` válidos, se agregan:
   - `distanceKm` (number)
   - `distanciaTexto` (string: ej. `"2.5 km"` o `"850 m"`)
@@ -209,7 +211,35 @@ Objeto completo del perfil del técnico con reseñas ordenadas de la más recien
 
 ---
 
-## 3. Ejemplo de consumo (TypeScript)
+## 3. Distritos y coordenadas de referencia (C28 - Mapa)
+
+```
+GET /api/districts
+```
+
+Endpoint público (sin autenticación). Devuelve la coordenada por defecto de Lima y una lista de distritos predefinidos con sus coordenadas aproximadas (centro del distrito).
+
+> **Aclaración importante:** Las coordenadas de los distritos son **aproximadas** (representan el centro del distrito). Su propósito es centrar el mapa y calcular técnicos cercanos cuando el usuario **no concede el permiso de GPS** (Escenario 2 de la HU C28).
+
+### Respuesta 200 OK
+```json
+{
+  "default": { "nombre": "Lima", "latitude": -12.0464, "longitude": -77.0428 },
+  "distritos": [
+    { "nombre": "Lurín", "latitude": -12.2745, "longitude": -76.8711 },
+    { "nombre": "Villa El Salvador", "latitude": -12.2136, "longitude": -76.9319 },
+    { "nombre": "Villa María del Triunfo", "latitude": -12.1606, "longitude": -76.9386 },
+    { "nombre": "Pachacámac", "latitude": -12.2297, "longitude": -76.8567 },
+    { "nombre": "San Juan de Miraflores", "latitude": -12.1550, "longitude": -76.9700 },
+    { "nombre": "Santiago de Surco", "latitude": -12.1453, "longitude": -77.0010 },
+    { "nombre": "Miraflores", "latitude": -12.1219, "longitude": -77.0297 }
+  ]
+}
+```
+
+---
+
+## 4. Ejemplo de consumo (TypeScript)
 
 ```typescript
 const API_URL = "https://proxihogar-backend-production.up.railway.app";
@@ -243,6 +273,8 @@ export interface TecnicoApi {
   tarifaBase: number;
   ubicacion: string;
   experienciaAnios: number;
+  latitude: number;
+  longitude: number;
   resenas: Resena[];
 }
 
@@ -305,7 +337,7 @@ export async function getTecnicoPorId(
 
 ---
 
-## 4. Notas para frontend
+## 5. Notas para frontend
 
 - El campo numérico de distancia se llama `distanceKm` y el formateado `distanciaTexto`.
 - El campo `calculoAproximado: true` indica que la estimación es lineal (no por ruta vial en tiempo real).
