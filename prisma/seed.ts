@@ -4,19 +4,87 @@ import bcrypt from "bcrypt";
 
 const prisma = new PrismaClient();
 
+const SEED_EMAILS = [
+  "juan.rios@correo.com",
+  "carlos.mamani@correo.com",
+  "miguel.soto@correo.com",
+  "andres.chu@correo.com",
+  "raul.huaman@correo.com",
+  "pedro.quispe@correo.com",
+  "walter.cardenas@correo.com",
+  "luis.fernandez@correo.com",
+];
+
+const SEED_TECH_IDS = [
+  "9837e9b0-0093-4ab1-9851-465a7031a941", // Juan Rios
+  "4de52940-ebaa-4f57-8413-2c72f107e672", // Carlos Mamani
+  "5c8c6f9a-eec8-4f9e-927b-ecfef0d88934", // Miguel Soto
+  "447d5211-3e9e-4b20-9090-d0ab2393731e", // Andrés Chu
+  "e44107d6-d6fd-487e-a93e-a237dd0947f5", // Raúl Huamán
+  "7f352aec-1abb-464a-9f6e-8da58b3b24be", // Pedro Quispe
+  "7bca293e-16d4-4881-8284-e7b7dda165e5", // Walter Cárdenas
+  "0a14e85f-743f-48d7-b76f-b3d65e4b4819", // Luis Fernández
+];
+
 async function main() {
-  await prisma.review.deleteMany();
-  await prisma.request.deleteMany();
-  await prisma.technician.deleteMany();
-  await prisma.service.deleteMany();
-  await prisma.category.deleteMany();
-  await prisma.user.deleteMany();
+  // 1. Obtener los IDs de usuarios del seed actualmente registrados
+  const seedUsers = await prisma.user.findMany({
+    where: { email: { in: SEED_EMAILS } },
+    select: { id: true },
+  });
+  const seedUserIds = seedUsers.map((u) => u.id);
+
+  // 2. Obtener los IDs de los técnicos asociados al seed
+  const seedTechnicians = await prisma.technician.findMany({
+    where: {
+      OR: [
+        { id: { in: SEED_TECH_IDS } },
+        { userId: { in: seedUserIds } },
+      ],
+    },
+    select: { id: true },
+  });
+  const allSeedTechIds = Array.from(new Set([...seedTechnicians.map((t) => t.id), ...SEED_TECH_IDS]));
+
+  // 3. Borrar reseñas relacionadas solo con los técnicos del seed
+  await prisma.review.deleteMany({
+    where: {
+      OR: [
+        { technicianId: { in: allSeedTechIds } },
+        ...(seedUserIds.length > 0 ? [{ clientId: { in: seedUserIds } }] : []),
+      ],
+    },
+  });
+
+  // 4. Borrar solicitudes relacionadas solo con los técnicos del seed
+  await prisma.request.deleteMany({
+    where: {
+      OR: [
+        { technicianId: { in: allSeedTechIds } },
+        ...(seedUserIds.length > 0 ? [{ clientId: { in: seedUserIds } }] : []),
+      ],
+    },
+  });
+
+  // 5. Borrar los técnicos de prueba del seed
+  await prisma.technician.deleteMany({
+    where: { id: { in: allSeedTechIds } },
+  });
+
+  // 6. Borrar solo los usuarios de prueba del seed (no toca usuarios clientes registrados)
+  if (seedUserIds.length > 0) {
+    await prisma.user.deleteMany({
+      where: { id: { in: seedUserIds } },
+    });
+  }
 
   const hashedPassword = await bcrypt.hash("password123", 10);
 
-  // 1. Categorías
-  const catGas = await prisma.category.create({
-    data: {
+  // 7. Categorías (upsert para mantener la integridad sin borrar categorías existentes)
+  const catGas = await prisma.category.upsert({
+    where: { slug: "gasfiteria" },
+    update: {},
+    create: {
       nombre: "Gasfitería",
       slug: "gasfiteria",
       icono: "🔧",
@@ -25,8 +93,10 @@ async function main() {
     },
   });
 
-  const catElec = await prisma.category.create({
-    data: {
+  const catElec = await prisma.category.upsert({
+    where: { slug: "electricidad" },
+    update: {},
+    create: {
       nombre: "Electricidad",
       slug: "electricidad",
       icono: "⚡",
@@ -35,8 +105,10 @@ async function main() {
     },
   });
 
-  const catAlb = await prisma.category.create({
-    data: {
+  const catAlb = await prisma.category.upsert({
+    where: { slug: "albanileria" },
+    update: {},
+    create: {
       nombre: "Albañilería",
       slug: "albanileria",
       icono: "🧱",
@@ -45,8 +117,10 @@ async function main() {
     },
   });
 
-  const catPint = await prisma.category.create({
-    data: {
+  const catPint = await prisma.category.upsert({
+    where: { slug: "pintura" },
+    update: {},
+    create: {
       nombre: "Pintura",
       slug: "pintura",
       icono: "🎨",
@@ -55,7 +129,7 @@ async function main() {
     },
   });
 
-  // 2. Técnico Principal (Juan Rios - Lurín) - ID explícito y conservado
+  // 1. Técnico Principal (Juan Rios - Lurín) - ID explícito
   const user1 = await prisma.user.create({
     data: {
       email: "juan.rios@correo.com",
@@ -113,7 +187,7 @@ async function main() {
     },
   });
 
-  // 3. Gasfitero 1 (Carlos Mamani - Villa El Salvador)
+  // 2. Gasfitero 1 (Carlos Mamani - Villa El Salvador) - ID explícito
   const user2 = await prisma.user.create({
     data: {
       email: "carlos.mamani@correo.com",
@@ -126,6 +200,7 @@ async function main() {
 
   await prisma.technician.create({
     data: {
+      id: "4de52940-ebaa-4f57-8413-2c72f107e672",
       userId: user2.id,
       nombre: "Carlos Mamani",
       iniciales: "CM",
@@ -170,7 +245,7 @@ async function main() {
     },
   });
 
-  // 4. Gasfitero 2 (Miguel Soto - Villa María del Triunfo) - verificado: false
+  // 3. Gasfitero 2 (Miguel Soto - Villa María del Triunfo) - ID explícito - verificado: false
   const user3 = await prisma.user.create({
     data: {
       email: "miguel.soto@correo.com",
@@ -183,6 +258,7 @@ async function main() {
 
   await prisma.technician.create({
     data: {
+      id: "5c8c6f9a-eec8-4f9e-927b-ecfef0d88934",
       userId: user3.id,
       nombre: "Miguel Soto",
       iniciales: "MS",
@@ -208,7 +284,7 @@ async function main() {
     },
   });
 
-  // 5. Electricista 2 (Andrés Chu - Santiago de Surco)
+  // 4. Electricista 2 (Andrés Chu - Santiago de Surco) - ID explícito
   const user4 = await prisma.user.create({
     data: {
       email: "andres.chu@correo.com",
@@ -221,6 +297,7 @@ async function main() {
 
   await prisma.technician.create({
     data: {
+      id: "447d5211-3e9e-4b20-9090-d0ab2393731e",
       userId: user4.id,
       nombre: "Andrés Chu",
       iniciales: "AC",
@@ -258,7 +335,7 @@ async function main() {
     },
   });
 
-  // 6. Electricista 3 (Raúl Huamán - Lurín) - verificado: false
+  // 5. Electricista 3 (Raúl Huamán - Lurín) - ID explícito - verificado: false - tarifaBase: null
   const user5 = await prisma.user.create({
     data: {
       email: "raul.huaman@correo.com",
@@ -271,6 +348,7 @@ async function main() {
 
   await prisma.technician.create({
     data: {
+      id: "e44107d6-d6fd-487e-a93e-a237dd0947f5",
       userId: user5.id,
       nombre: "Raúl Huamán",
       iniciales: "RH",
@@ -296,7 +374,7 @@ async function main() {
     },
   });
 
-  // 7. Albañil 1 (Pedro Quispe - Pachacámac)
+  // 6. Albañil 1 (Pedro Quispe - Pachacámac) - ID explícito
   const user6 = await prisma.user.create({
     data: {
       email: "pedro.quispe@correo.com",
@@ -309,6 +387,7 @@ async function main() {
 
   await prisma.technician.create({
     data: {
+      id: "7f352aec-1abb-464a-9f6e-8da58b3b24be",
       userId: user6.id,
       nombre: "Pedro Quispe",
       iniciales: "PQ",
@@ -346,7 +425,7 @@ async function main() {
     },
   });
 
-  // 8. Albañil 2 (Walter Cárdenas - San Juan de Miraflores) - disponible: false
+  // 7. Albañil 2 (Walter Cárdenas - San Juan de Miraflores) - ID explícito - disponible: false
   const user7 = await prisma.user.create({
     data: {
       email: "walter.cardenas@correo.com",
@@ -359,6 +438,7 @@ async function main() {
 
   await prisma.technician.create({
     data: {
+      id: "7bca293e-16d4-4881-8284-e7b7dda165e5",
       userId: user7.id,
       nombre: "Walter Cárdenas",
       iniciales: "WC",
@@ -384,7 +464,7 @@ async function main() {
     },
   });
 
-  // 9. Pintor 1 (Luis Fernández - Miraflores)
+  // 8. Pintor 1 (Luis Fernández - Miraflores) - ID explícito
   const user8 = await prisma.user.create({
     data: {
       email: "luis.fernandez@correo.com",
@@ -397,6 +477,7 @@ async function main() {
 
   await prisma.technician.create({
     data: {
+      id: "0a14e85f-743f-48d7-b76f-b3d65e4b4819",
       userId: user8.id,
       nombre: "Luis Fernández",
       iniciales: "LF",
