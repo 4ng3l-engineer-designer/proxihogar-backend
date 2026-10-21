@@ -26,7 +26,9 @@ export interface TecnicoResponse {
   distanciaTexto?: string;
   tiempoLlegada: string;
   calculoAproximado?: boolean;
-  tarifaBase: number;
+  tarifaBase: number | null;
+  moneda: string;
+  tarifaTexto: string;
   ubicacion: string;
   experienciaAnios: number;
   latitude: number;
@@ -46,7 +48,9 @@ export interface TecnicoProfileResponse {
   calificacion: number;
   cantidadResenas: number;
   cantidadTrabajos: number;
-  tarifaBase: number;
+  tarifaBase: number | null;
+  moneda: string;
+  tarifaTexto: string;
   ubicacion: string;
   experienciaAnios: number;
   latitude: number;

@@ -2,6 +2,7 @@
 import { TechnicianRepository } from "../repositories/technician.repository";
 import { NearbyQueryParams, TecnicoProfileResponse, TecnicoResponse } from "../types/technician.types";
 import { calculateHaversineDistance, estimateArrivalTime, formatDistance } from "../utils/haversine";
+import { formatTarifa, MONEDA } from "../utils/currency";
 
 export class TechnicianService {
   constructor(private readonly technicianRepository = new TechnicianRepository()) {}
@@ -44,9 +45,11 @@ export class TechnicianService {
           continue;
         }
 
-        // Filtro opcional: tarifa máxima
-        if (tarifaMax !== undefined && tech.tarifaBase > tarifaMax) {
-          continue;
+        // Filtro opcional: tarifa máxima (los técnicos con tarifaBase null NO deben aparecer cuando se usa tarifaMax)
+        if (tarifaMax !== undefined) {
+          if (tech.tarifaBase === null || tech.tarifaBase === undefined || tech.tarifaBase > tarifaMax) {
+            continue;
+          }
         }
 
         // Formatear reseñas respetando la interfaz Resena
@@ -81,6 +84,8 @@ export class TechnicianService {
           tiempoLlegada: estimateArrivalTime(distance),
           calculoAproximado: true,
           tarifaBase: tech.tarifaBase,
+          moneda: MONEDA,
+          tarifaTexto: formatTarifa(tech.tarifaBase),
           ubicacion: tech.ubicacion,
           experienciaAnios: tech.experienciaAnios,
           latitude: tech.latitude,
@@ -131,6 +136,8 @@ export class TechnicianService {
       cantidadResenas: tech.cantidadResenas,
       cantidadTrabajos: tech.cantidadTrabajos,
       tarifaBase: tech.tarifaBase,
+      moneda: MONEDA,
+      tarifaTexto: formatTarifa(tech.tarifaBase),
       ubicacion: tech.ubicacion,
       experienciaAnios: tech.experienciaAnios,
       latitude: tech.latitude,

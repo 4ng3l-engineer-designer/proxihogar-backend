@@ -121,7 +121,7 @@ GET /api/technicians/nearby
 | `especialidad`    | string                | No        | Ej. `Electricista`, sin distinguir mayúsculas            |
 | `verificado`      | `"true"` / `"false"`  | No        | `"true"` devuelve solo técnicos verificados              |
 | `calificacionMin` | number (0 a 5)        | No        | Calificación mínima                                      |
-| `tarifaMax`       | number positivo       | No        | Tarifa base máxima                                       |
+| `tarifaMax`       | number positivo       | No        | Tarifa base máxima (excluye a técnicos con `tarifaBase: null`) |
 
 Los filtros son opcionales y combinables. Los resultados vienen ordenados por distancia ascendente. Solo se retornan técnicos con `disponible: true`.
 
@@ -152,7 +152,9 @@ Campos de cada técnico:
 - `distanciaTexto` (string): texto amigable de distancia (`"2.5 km"` o `"850 m"` si es menor a 1 km)
 - `tiempoLlegada` (string): tiempo estimado vehicular (`"15 min"`, `"1 h 15 min"` o `"2 h"`)
 - `calculoAproximado` (boolean): `true` (indica que el cálculo es lineal, sin ruta GPS en tiempo real)
-- `tarifaBase` (number)
+- `tarifaBase` (number | null): monto base o `null` si no tiene tarifa fija
+- `moneda` (string): código de moneda (`"PEN"`)
+- `tarifaTexto` (string): tarifa formateada lista para mostrar en la interfaz (ej. `"S/ 30.00"` o `"Tarifa a convenir"` si es `null`)
 - `ubicacion` (string)
 - `experienciaAnios` (number)
 - `latitude` (number): latitud del técnico (para ubicar pines en el mapa C28)
@@ -196,7 +198,7 @@ GET /api/technicians/:id
 
 Objeto completo del perfil del técnico con reseñas ordenadas de la más reciente a la más antigua:
 
-- Campos base: `id`, `nombre`, `iniciales`, `colorAvatar`, `especialidad`, `especialidades`, `descripcion`, `verificado`, `calificacion`, `cantidadResenas`, `cantidadTrabajos`, `tarifaBase`, `ubicacion`, `experienciaAnios`, `latitude`, `longitude`, `resenas`.
+- Campos base: `id`, `nombre`, `iniciales`, `colorAvatar`, `especialidad`, `especialidades`, `descripcion`, `verificado`, `calificacion`, `cantidadResenas`, `cantidadTrabajos`, `tarifaBase` (number | null), `moneda` (string), `tarifaTexto` (string), `ubicacion`, `experienciaAnios`, `latitude`, `longitude`, `resenas`.
 - Si se enviaron `lat` y `lng` válidos, se agregan:
   - `distanceKm` (number)
   - `distanciaTexto` (string: ej. `"2.5 km"` o `"850 m"`)
@@ -270,7 +272,9 @@ export interface TecnicoApi {
   distanciaTexto?: string;
   tiempoLlegada?: string;
   calculoAproximado?: boolean;
-  tarifaBase: number;
+  tarifaBase: number | null;
+  moneda: string;
+  tarifaTexto: string;
   ubicacion: string;
   experienciaAnios: number;
   latitude: number;
@@ -341,6 +345,8 @@ export async function getTecnicoPorId(
 
 - El campo numérico de distancia se llama `distanceKm` y el formateado `distanciaTexto`.
 - El campo `calculoAproximado: true` indica que la estimación es lineal (no por ruta vial en tiempo real).
+- El campo `tarifaTexto` ya viene formateado con el símbolo de moneda (`"S/ 30.00"`) o `"Tarifa a convenir"` si `tarifaBase` es `null`. Se recomienda mostrar directamente `tarifaTexto` en las tarjetas sin concatenar la moneda manualmente.
+- Los filtros por `tarifaMax` excluyen automáticamente a los técnicos que tienen `tarifaBase: null`.
 - La API necesita `lat` y `lng` numéricos: si el usuario elige un distrito, el frontend debe traducirlo a coordenadas o usar `expo-location`.
 - Datos de prueba: existen **8 técnicos de prueba** en la base de datos distribuidos en Lima (Lurín, Villa El Salvador, Villa María del Triunfo, Pachacámac, San Juan de Miraflores, Santiago de Surco y Miraflores), 7 de ellos disponibles y 1 no disponible.
 - La primera petición puede tardar unos segundos si el servidor estuvo inactivo.

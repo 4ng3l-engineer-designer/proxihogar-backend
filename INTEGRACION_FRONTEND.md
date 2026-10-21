@@ -64,7 +64,9 @@ export interface TecnicoApi {
   distanciaTexto?: string;  // Presente en /nearby o en /:id si se envían lat/lng (ej: "2.5 km" o "850 m")
   tiempoLlegada?: string;   // Presente en /nearby o en /:id si se envían lat/lng (ej: "15 min", "1 h 15 min")
   calculoAproximado?: boolean; // true cuando se calcula la distancia y tiempo
-  tarifaBase: number;
+  tarifaBase: number | null; // null si es a convenir
+  moneda: string;           // "PEN"
+  tarifaTexto: string;      // ej: "S/ 30.00" o "Tarifa a convenir"
   ubicacion: string;
   experienciaAnios: number;
   latitude: number;         // Latitud para ubicar el pin en el mapa (C28)
@@ -73,7 +75,9 @@ export interface TecnicoApi {
 }
 ```
 
-> **Nota importante:** `distanceKm` y `tiempoLlegada` solo vienen en las respuestas del endpoint `/nearby`. Si el tipo actual de tu componente usa `distanciaKm` con "a", cámbialo a `distanceKm` o mapea la propiedad al recibir la respuesta.
+> **Nota importante sobre tarifas (C24):** Mostrar siempre `tarifaTexto` en la tarjeta del técnico y en la vista de perfil. **No armar el precio a mano** (no concatenes `"S/"` ni agregues decimales manualmente en los componentes del frontend). Si el técnico no tiene tarifa establecida (`tarifaBase: null`), `tarifaTexto` ya contiene automáticamente `"Tarifa a convenir"`. Además, al filtrar por `tarifaMax`, la API excluye automáticamente a los técnicos con tarifa a convenir.
+
+> **Nota sobre distancias:** `distanceKm` y `tiempoLlegada` vienen calculados en el endpoint `/nearby`. Si el tipo actual de tu componente usa `distanciaKm` con "a", cámbialo a `distanceKm` o mapea la propiedad al recibir la respuesta.
 
 ---
 

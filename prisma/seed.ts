@@ -286,7 +286,7 @@ async function main() {
       calificacion: 3.8,
       cantidadResenas: 12,
       cantidadTrabajos: 22,
-      tarifaBase: 30,
+      tarifaBase: null,
       ubicacion: "Lurín, Lima",
       latitude: -12.2800,
       longitude: -76.8650,

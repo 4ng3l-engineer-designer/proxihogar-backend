@@ -94,7 +94,7 @@ model Technician {
   calificacion     Float       @default(5.0)
   cantidadResenas  Int         @default(0)
   cantidadTrabajos Int         @default(0)
-  tarifaBase       Float
+  tarifaBase       Float?
   ubicacion        String      // Ej: "Lurín, Lima"
   latitude         Float
   longitude        Float
