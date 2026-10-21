@@ -40,4 +40,20 @@ export class TechnicianRepository {
       },
     });
   }
+
+  /**
+   * Obtiene un técnico por ID con los datos de su usuario (teléfono).
+   */
+  async findById(id: string) {
+    return prisma.technician.findUnique({
+      where: { id },
+      include: {
+        user: {
+          select: {
+            telefono: true,
+          },
+        },
+      },
+    });
+  }
 }

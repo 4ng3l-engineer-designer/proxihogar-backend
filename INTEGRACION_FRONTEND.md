@@ -619,6 +619,142 @@ import MapView, { Marker } from "react-native-maps";
 
 ---
 
+## Seguimiento (C33)
+
+La pantalla de seguimiento del servicio (ej. `src/app/(solicitante)/seguimiento/[id].tsx`) permite al cliente visualizar el estado de su solicitud y la información en tiempo real del técnico asignado.
+
+### 1. Obtener los datos de la solicitud y del técnico asignado
+
+Para consultar la solicitud, se invoca `GET /api/requests/:id` enviando el token de autenticación en el header `Authorization`:
+
+```typescript
+import { API_URL } from "../constants/api";
+import { getAuthToken } from "./authStorage";
+
+export interface TecnicoAsignado {
+  id: string;
+  nombre: string;
+  iniciales: string;
+  colorAvatar: string;
+  especialidad: string;
+  verificado: boolean;
+  calificacion: number;
+  cantidadResenas: number;
+  experienciaAnios: number;
+  telefono: string | null;
+  tarifaBase: number | null;
+  moneda: string;
+  tarifaTexto: string;
+  distanceKm?: number;
+  distanciaTexto?: string;
+  tiempoLlegada?: string;
+  calculoAproximado?: boolean;
+}
+
+export interface SolicitudDetalle {
+  id: string;
+  status: "PENDING" | "ACCEPTED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+  direccion: string;
+  tipoProblema: string;
+  descripcion: string;
+  radio: string;
+  createdAt: string;
+  updatedAt: string;
+  tecnico: TecnicoAsignado;
+}
+
+export async function getSolicitudPorId(id: string): Promise<SolicitudDetalle> {
+  const token = await getAuthToken();
+  if (!token) {
+    throw new Error("No hay sesión activa");
+  }
+
+  const res = await fetch(`${API_URL}/api/requests/${encodeURIComponent(id)}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => ({}));
+    throw new Error(errorBody.error || `Error ${res.status} al cargar seguimiento`);
+  }
+
+  return res.json();
+}
+```
+
+### 2. Renderizar la información del técnico en la pantalla de seguimiento
+
+La respuesta de `GET /api/requests/:id` contiene el objeto `tecnico` con todos los datos necesarios para pintar la tarjeta del profesional asignado:
+
+```tsx
+import React, { useEffect, useState } from "react";
+import { View, Text, ActivityIndicator, TouchableOpacity, Linking } from "react-native";
+import { useLocalSearchParams } from "expo-router";
+import { getSolicitudPorId, SolicitudDetalle } from "@/services/api";
+
+export default function SeguimientoScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const [solicitud, setSolicitud] = useState<SolicitudDetalle | null>(null);
+  const [cargando, setCargando] = useState(true);
+
+  useEffect(() => {
+    if (id) {
+      getSolicitudPorId(id)
+        .then(setSolicitud)
+        .catch(console.error)
+        .finally(() => setCargando(false));
+    }
+  }, [id]);
+
+  if (cargando) return <ActivityIndicator size="large" color="#2563EB" />;
+  if (!solicitud) return <Text>Solicitud no encontrada</Text>;
+
+  const { tecnico } = solicitud;
+
+  return (
+    <View className="p-4 bg-white rounded-2xl shadow-sm">
+      {/* Datos del Técnico Asignado */}
+      <View className="flex-row items-center mb-3">
+        <View style={{ backgroundColor: tecnico.colorAvatar }} className="w-12 h-12 rounded-full items-center justify-center mr-3">
+          <Text className="text-white font-bold">{tecnico.iniciales}</Text>
+        </View>
+        <View className="flex-1">
+          <Text className="text-lg font-bold text-slate-800">{tecnico.nombre}</Text>
+          <Text className="text-sm text-slate-500">{tecnico.especialidad} • ⭐ {tecnico.calificacion}</Text>
+        </View>
+      </View>
+
+      {/* Estimación de Llegada y Distancia */}
+      {tecnico.tiempoLlegada && (
+        <View className="bg-blue-50 p-3 rounded-xl mb-3">
+          <Text className="text-blue-800 font-semibold">
+            Tiempo estimado de llegada: {tecnico.tiempoLlegada} ({tecnico.distanciaTexto})
+          </Text>
+        </View>
+      )}
+
+      {/* Tarifa base */}
+      <Text className="text-slate-600 mb-2">Tarifa base: <Text className="font-bold">{tecnico.tarifaTexto}</Text></Text>
+
+      {/* Botón de Llamada directa si tiene teléfono registrado */}
+      {tecnico.telefono && (
+        <TouchableOpacity
+          onPress={() => Linking.openURL(`tel:${tecnico.telefono}`)}
+          className="bg-green-600 py-3 rounded-xl items-center mt-2"
+        >
+          <Text className="text-white font-bold">Llamar al técnico ({tecnico.telefono})</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+```
+
+---
+
 ## Paso 8: Estados de la pantalla
 
 Maneja siempre los 4 estados principales de visualización:

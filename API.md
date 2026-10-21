@@ -241,7 +241,107 @@ Endpoint público (sin autenticación). Devuelve la coordenada por defecto de Li
 
 ---
 
-## 4. Ejemplo de consumo (TypeScript)
+## 4. Solicitudes de servicio (C33 - Seguimiento)
+
+Todas las rutas bajo `/api/requests` están protegidas y requieren autenticación con token Bearer y rol `CLIENT`. El `clientId` se toma automáticamente del token JWT del usuario autenticado.
+
+Header requerido:
+```
+Authorization: Bearer <token>
+```
+
+### 4.1 Crear solicitud de servicio
+```
+POST /api/requests
+```
+
+**Body (JSON):**
+| Campo | Tipo | Requerido | Descripción |
+| :--- | :--- | :--- | :--- |
+| `technicianId` | string | Sí | ID del técnico a contratar |
+| `direccion` | string | Sí | Dirección de atención |
+| `tipoProblema` | string | Sí | Categoría o tipo del problema |
+| `descripcion` | string | Sí | Detalle del problema |
+| `radio` | string | No | Radio de búsqueda / atención (default: `"5km"`) |
+| `latitude` | number | No | Latitud de la solicitud (-90 a 90). Obligatorio si se envía `longitude`. |
+| `longitude` | number | No | Longitud de la solicitud (-180 a 180). Obligatorio si se envía `latitude`. |
+
+**Respuesta 201 Created:**
+```json
+{
+  "id": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
+  "status": "PENDING",
+  "direccion": "Av. Larco 123, Miraflores",
+  "tipoProblema": "Fuga de agua",
+  "descripcion": "El caño de la cocina gotea continuamente",
+  "radio": "5km",
+  "createdAt": "2026-10-21T05:30:00.000Z",
+  "updatedAt": "2026-10-21T05:30:00.000Z",
+  "tecnico": {
+    "id": "9837e9b0-0093-4ab1-9851-465a7031a941",
+    "nombre": "Juan Rios",
+    "iniciales": "JR",
+    "colorAvatar": "#0B192C",
+    "especialidad": "Electricista",
+    "verificado": true,
+    "calificacion": 4.9,
+    "cantidadResenas": 142,
+    "experienciaAnios": 8,
+    "telefono": "987654321",
+    "tarifaBase": 30,
+    "moneda": "PEN",
+    "tarifaTexto": "S/ 30.00",
+    "distanceKm": 18.2,
+    "distanciaTexto": "18.2 km",
+    "tiempoLlegada": "1 h 52 min",
+    "calculoAproximado": true
+  }
+}
+```
+
+**Errores:**
+- **400 Bad Request:** Campos requeridos faltantes (`direccion`, `tipoProblema`, `descripcion`, `technicianId`) o coordenadas fuera de rango / incompletas.
+- **401 Unauthorized:** Token no proporcionado o expirado.
+- **403 Forbidden:** El usuario autenticado no tiene rol `CLIENT`.
+- **404 Not Found:** El técnico especificado no existe.
+- **409 Conflict:** `"El técnico no está disponible"` (cuando el técnico tiene `disponible: false`).
+
+---
+
+### 4.2 Listar solicitudes del cliente
+```
+GET /api/requests
+```
+
+Devuelve las solicitudes creadas por el cliente autenticado, ordenadas de la más reciente a la más antigua.
+
+**Respuesta 200 OK:**
+Array de solicitudes con la estructura descrita en el punto 4.1.
+
+**Errores:**
+- **401 Unauthorized:** Token no proporcionado o inválido.
+- **403 Forbidden:** Usuario con rol no autorizado (requiere `CLIENT`).
+
+---
+
+### 4.3 Detalle de una solicitud (Pantalla de seguimiento C33)
+```
+GET /api/requests/:id
+```
+
+Obtiene los datos de la solicitud y el objeto `tecnico` con la información del técnico asignado para la pantalla de seguimiento.
+
+**Respuesta 200 OK:**
+Objeto de la solicitud con el objeto `tecnico` completo.
+
+**Errores:**
+- **401 Unauthorized:** Token no proporcionado o inválido.
+- **403 Forbidden:** Usuario con rol no autorizado (requiere `CLIENT`).
+- **404 Not Found:** La solicitud no existe o pertenece a otro usuario (no revela su existencia).
+
+---
+
+## 5. Ejemplo de consumo (TypeScript)
 
 ```typescript
 const API_URL = "https://proxihogar-backend-production.up.railway.app";
@@ -341,7 +441,7 @@ export async function getTecnicoPorId(
 
 ---
 
-## 5. Notas para frontend
+## 6. Notas para frontend
 
 - El campo numérico de distancia se llama `distanceKm` y el formateado `distanciaTexto`.
 - El campo `calculoAproximado: true` indica que la estimación es lineal (no por ruta vial en tiempo real).
