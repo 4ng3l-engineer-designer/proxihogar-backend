@@ -214,6 +214,61 @@ Objeto completo del perfil del técnico con reseñas ordenadas de la más recien
 
 ---
 
+### 2.3 Solicitudes asignadas al técnico autenticado
+```
+GET /api/technicians/me/requests
+```
+
+Permite al técnico autenticado (rol `WORKER`) consultar todas las solicitudes que tiene asignadas, ordenadas de la más reciente a la más antigua.
+
+**Headers:**
+```
+Authorization: Bearer <token_worker>
+```
+
+**Respuesta 200 OK:**
+```json
+[
+  {
+    "id": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
+    "status": "PENDING",
+    "direccion": "Av. Larco 123, Miraflores",
+    "tipoProblema": "Cortocircuito en sala",
+    "descripcion": "Saltan los plomos continuamente.",
+    "radio": "5km",
+    "latitude": -12.1219,
+    "longitude": -77.0297,
+    "createdAt": "2026-10-22T16:30:00.000Z",
+    "updatedAt": "2026-10-22T16:30:00.000Z",
+    "cliente": {
+      "nombre": "Cliente Ejemplo",
+      "telefono": "987111222"
+    },
+    "estado": {
+      "codigo": "PENDING",
+      "texto": "Pendiente de aceptación",
+      "paso": 1,
+      "totalPasos": 5,
+      "color": "#EAB308",
+      "historial": [
+        {
+          "codigo": "PENDING",
+          "texto": "Pendiente de aceptación",
+          "fecha": "2026-10-22T16:30:00.000Z"
+        }
+      ]
+    }
+  }
+]
+```
+
+**Errores:**
+- **401 Unauthorized:** Token no proporcionado o inválido.
+- **403 Forbidden:** El usuario no posee el rol `WORKER`.
+- **404 Not Found:** El usuario autenticado no tiene un perfil de técnico asociado.
+
+---
+
 ## 3. Distritos y coordenadas de referencia (C28 - Mapa)
 
 ```
@@ -298,6 +353,20 @@ POST /api/requests
     "distanciaTexto": "18.2 km",
     "tiempoLlegada": "1 h 52 min",
     "calculoAproximado": true
+  },
+  "estado": {
+    "codigo": "PENDING",
+    "texto": "Pendiente de aceptación",
+    "paso": 1,
+    "totalPasos": 5,
+    "color": "#EAB308",
+    "historial": [
+      {
+        "codigo": "PENDING",
+        "texto": "Pendiente de aceptación",
+        "fecha": "2026-10-21T05:30:00.000Z"
+      }
+    ]
   }
 }
 ```
@@ -319,7 +388,7 @@ GET /api/requests
 Devuelve las solicitudes creadas por el cliente autenticado, ordenadas de la más reciente a la más antigua.
 
 **Respuesta 200 OK:**
-Array de solicitudes con la estructura descrita en el punto 4.1.
+Array de solicitudes con la estructura descrita en el punto 4.1 (incluyendo `tecnico` y `estado`).
 
 **Errores:**
 - **401 Unauthorized:** Token no proporcionado o inválido.
@@ -327,20 +396,80 @@ Array de solicitudes con la estructura descrita en el punto 4.1.
 
 ---
 
-### 4.3 Detalle de una solicitud (Pantalla de seguimiento C33)
+### 4.3 Detalle de una solicitud (Pantalla de seguimiento C33 / C38)
 ```
 GET /api/requests/:id
 ```
 
-Obtiene los datos de la solicitud y el objeto `tecnico` con la información del técnico asignado para la pantalla de seguimiento.
+Obtiene los datos de la solicitud, el objeto `tecnico` y el objeto `estado` completo para la pantalla de seguimiento y la cabecera del chat.
 
 **Respuesta 200 OK:**
-Objeto de la solicitud con el objeto `tecnico` completo.
+Objeto de la solicitud con `tecnico` y `estado`.
 
 **Errores:**
 - **401 Unauthorized:** Token no proporcionado o inválido.
 - **403 Forbidden:** Usuario con rol no autorizado (requiere `CLIENT`).
 - **404 Not Found:** La solicitud no existe o pertenece a otro usuario (no revela su existencia).
+
+---
+
+### 4.4 Actualizar estado de una solicitud (C31 - Indicador de estado)
+```
+PATCH /api/requests/:id/status
+```
+
+Permite avanzar o cancelar el estado de una solicitud según las transiciones permitidas por el rol del usuario autenticado (`CLIENT` o `WORKER`).
+
+**Headers:**
+```
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Body (JSON):**
+| Campo | Tipo | Requerido | Descripción |
+| :--- | :--- | :--- | :--- |
+| `status` | string | Sí | Nuevo estado (`PENDING`, `ACCEPTED`, `ON_THE_WAY`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`) |
+
+**Matriz de transiciones permitidas:**
+- **WORKER asignado:**
+  - `PENDING` → `ACCEPTED` o `CANCELLED`
+  - `ACCEPTED` → `ON_THE_WAY`
+  - `ON_THE_WAY` → `IN_PROGRESS`
+  - `IN_PROGRESS` → `COMPLETED`
+- **CLIENT dueño:**
+  - `PENDING` → `CANCELLED`
+  - `ACCEPTED` → `CANCELLED`
+
+**Respuesta 200 OK:**
+Objeto de la solicitud con el nuevo `status` y el objeto `estado` actualizado (incorporando el nuevo log en `historial`).
+
+**Errores:**
+- **400 Bad Request:** Estado no enviado o valor no reconocido en `RequestStatus`.
+- **401 Unauthorized:** Token no proporcionado o inválido.
+- **404 Not Found:** Solicitud no encontrada o no pertenece al usuario autenticado (si es cliente, no es el dueño; si es técnico, no es el técnico asignado).
+- **409 Conflict:** Transición no permitida (ej. `"No se puede pasar de PENDING a COMPLETED."`).
+
+---
+
+### 4.5 Catálogo de estados del servicio (C31)
+```
+GET /api/request-statuses
+```
+
+Endpoint público para consultar la lista de estados configurados en el sistema, permitiendo al frontend construir dinámicamente indicadores de progreso y listas de estados.
+
+**Respuesta 200 OK:**
+```json
+[
+  { "codigo": "PENDING", "texto": "Pendiente de aceptación", "paso": 1, "color": "#EAB308" },
+  { "codigo": "ACCEPTED", "texto": "Aceptado", "paso": 2, "color": "#3B82F6" },
+  { "codigo": "ON_THE_WAY", "texto": "Técnico en camino", "paso": 3, "color": "#8B5CF6" },
+  { "codigo": "IN_PROGRESS", "texto": "Servicio en progreso", "paso": 4, "color": "#0EA5E9" },
+  { "codigo": "COMPLETED", "texto": "Finalizado", "paso": 5, "color": "#10B981" },
+  { "codigo": "CANCELLED", "texto": "Cancelado", "paso": null, "color": "#EF4444" }
+]
+```
 
 ---
 

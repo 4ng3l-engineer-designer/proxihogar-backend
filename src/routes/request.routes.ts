@@ -7,11 +7,15 @@ import { authenticate, requireRole } from "../middlewares/auth.middleware";
 const router = Router();
 const requestController = new RequestController();
 
-// Todas las rutas de /api/requests requieren autenticación y rol CLIENT
-router.use(authenticate, requireRole(Role.CLIENT));
+// Todas las rutas requieren autenticación
+router.use(authenticate);
 
-router.post("/", requestController.create);
-router.get("/", requestController.getAll);
-router.get("/:id", requestController.getById);
+// Rutas exclusivas para CLIENT
+router.post("/", requireRole(Role.CLIENT), requestController.create);
+router.get("/", requireRole(Role.CLIENT), requestController.getAll);
+router.get("/:id", requireRole(Role.CLIENT), requestController.getById);
+
+// Actualizar estado (disponible tanto para CLIENT dueño como para WORKER asignado)
+router.patch("/:id/status", requestController.updateStatus);
 
 export default router;

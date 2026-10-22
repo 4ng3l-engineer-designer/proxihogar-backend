@@ -20,6 +20,7 @@ enum Role {
 enum RequestStatus {
   PENDING
   ACCEPTED
+  ON_THE_WAY
   IN_PROGRESS
   COMPLETED
   CANCELLED
@@ -153,8 +154,25 @@ model Request {
   updatedAt     DateTime       @updatedAt
 
   // Relaciones
-  client        User           @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  technician    Technician     @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  client        User               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  technician    Technician         @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  statusLogs    RequestStatusLog[]
 
   @@map("requests")
+}
+
+// ── HISTORIAL DE ESTADOS DE SOLICITUD ──
+
+model RequestStatusLog {
+  id         String        @id @default(uuid())
+  requestId  String
+  status     RequestStatus
+  changedBy  String        // userId
+  createdAt  DateTime      @default(now())
+
+  // Relaciones
+  request    Request       @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@map("request_status_logs")
 }

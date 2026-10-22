@@ -1,10 +1,19 @@
 // src/services/request.service.ts
+import { RequestStatus, Role } from "@prisma/client";
 import { RequestRepository, RequestWithTechnician } from "../repositories/request.repository";
 import { TechnicianRepository } from "../repositories/technician.repository";
-import { CreateRequestDto, RequestResponse, TecnicoAsignadoResponse } from "../types/request.types";
+import {
+  CreateRequestDto,
+  EstadoSolicitudResponse,
+  HistorialEstadoItem,
+  RequestResponse,
+  TecnicoAsignadoResponse,
+  WorkerRequestResponse,
+} from "../types/request.types";
 import { HttpError } from "../utils/errors";
 import { calculateHaversineDistance, estimateArrivalTime, formatDistance } from "../utils/haversine";
 import { formatTarifa, MONEDA } from "../utils/currency";
+import { isTransitionAllowed, STATUS_CONFIG, TOTAL_PASOS } from "../utils/requestStatus";
 
 export class RequestService {
   constructor(
@@ -64,7 +73,7 @@ export class RequestService {
       throw new HttpError(409, "El técnico no está disponible.");
     }
 
-    // 4. Crear la solicitud con status PENDING
+    // 4. Crear la solicitud con status PENDING e inicializar statusLogs
     const createdRequest = await this.requestRepository.create({
       clientId,
       technicianId: technician.id,
@@ -93,6 +102,127 @@ export class RequestService {
     }
 
     return this.mapToResponse(request);
+  }
+
+  async updateStatus(
+    id: string,
+    newStatusInput: unknown,
+    userId: string,
+    userRole: Role
+  ): Promise<RequestResponse> {
+    // 1. Validar que el nuevo status sea válido
+    if (
+      !newStatusInput ||
+      typeof newStatusInput !== "string" ||
+      !Object.values(RequestStatus).includes(newStatusInput as RequestStatus)
+    ) {
+      throw new HttpError(400, "Estado inválido o no proporcionado.");
+    }
+
+    const nextStatus = newStatusInput as RequestStatus;
+
+    // 2. Buscar la solicitud existente
+    const request = await this.requestRepository.findById(id);
+    if (!request) {
+      throw new HttpError(404, "Solicitud no encontrada.");
+    }
+
+    // 3. Validar permisos y transiciones según rol
+    if (userRole === Role.CLIENT) {
+      // Solo el dueño puede modificar
+      if (request.clientId !== userId) {
+        throw new HttpError(404, "Solicitud no encontrada.");
+      }
+
+      if (!isTransitionAllowed(Role.CLIENT, request.status, nextStatus)) {
+        throw new HttpError(
+          409,
+          `No se puede pasar de ${request.status} a ${nextStatus}.`
+        );
+      }
+    } else if (userRole === Role.WORKER) {
+      // Buscar técnico asignado por userId
+      const tech = await this.technicianRepository.findByUserId(userId);
+      if (!tech || request.technicianId !== tech.id) {
+        throw new HttpError(404, "Solicitud no encontrada.");
+      }
+
+      if (!isTransitionAllowed(Role.WORKER, request.status, nextStatus)) {
+        throw new HttpError(
+          409,
+          `No se puede pasar de ${request.status} a ${nextStatus}.`
+        );
+      }
+    } else {
+      throw new HttpError(403, "Rol no autorizado para cambiar el estado.");
+    }
+
+    // 4. Guardar cambio y registrar log
+    const updatedRequest = await this.requestRepository.updateStatus(id, nextStatus, userId);
+    return this.mapToResponse(updatedRequest);
+  }
+
+  async getWorkerRequests(userId: string): Promise<WorkerRequestResponse[]> {
+    const tech = await this.technicianRepository.findByUserId(userId);
+    if (!tech) {
+      throw new HttpError(404, "Perfil de técnico no encontrado.");
+    }
+
+    const requests = await this.requestRepository.findByTechnicianId(tech.id);
+
+    return requests.map((r) => ({
+      id: r.id,
+      status: r.status,
+      direccion: r.direccion,
+      tipoProblema: r.tipoProblema,
+      descripcion: r.descripcion,
+      radio: r.radio,
+      latitude: r.latitude,
+      longitude: r.longitude,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      cliente: {
+        nombre: r.client.nombre,
+        telefono: r.client.telefono,
+      },
+      estado: this.buildEstado(r.status, r.createdAt, r.statusLogs),
+    }));
+  }
+
+  private buildEstado(
+    status: RequestStatus,
+    createdAt: Date,
+    statusLogs?: { status: RequestStatus; createdAt: Date }[]
+  ): EstadoSolicitudResponse {
+    const meta = STATUS_CONFIG[status];
+    let historial: HistorialEstadoItem[] = [];
+
+    if (statusLogs && statusLogs.length > 0) {
+      historial = statusLogs.map((log) => ({
+        codigo: log.status,
+        texto: STATUS_CONFIG[log.status]?.texto ?? log.status,
+        fecha: log.createdAt,
+      }));
+    } else {
+      // Si no tiene registros en request_status_logs (creadas antes de la migración),
+      // devolver al menos un elemento con su status actual y la fecha createdAt
+      historial = [
+        {
+          codigo: status,
+          texto: meta.texto,
+          fecha: createdAt,
+        },
+      ];
+    }
+
+    return {
+      codigo: status,
+      texto: meta.texto,
+      paso: meta.paso,
+      totalPasos: TOTAL_PASOS,
+      color: meta.color,
+      historial,
+    };
   }
 
   private mapToResponse(request: RequestWithTechnician): RequestResponse {
@@ -141,6 +271,7 @@ export class RequestService {
       createdAt: request.createdAt,
       updatedAt: request.updatedAt,
       tecnico,
+      estado: this.buildEstado(request.status, request.createdAt, request.statusLogs),
     };
   }
 }

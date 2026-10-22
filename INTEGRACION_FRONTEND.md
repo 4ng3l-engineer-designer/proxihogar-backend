@@ -654,9 +654,24 @@ export interface TecnicoAsignado {
   calculoAproximado?: boolean;
 }
 
+export interface HistorialEstadoItem {
+  codigo: "PENDING" | "ACCEPTED" | "ON_THE_WAY" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+  texto: string;
+  fecha: string;
+}
+
+export interface EstadoSolicitud {
+  codigo: "PENDING" | "ACCEPTED" | "ON_THE_WAY" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+  texto: string;
+  paso: number | null;
+  totalPasos: number;
+  color: string;
+  historial: HistorialEstadoItem[];
+}
+
 export interface SolicitudDetalle {
   id: string;
-  status: "PENDING" | "ACCEPTED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+  status: "PENDING" | "ACCEPTED" | "ON_THE_WAY" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
   direccion: string;
   tipoProblema: string;
   descripcion: string;
@@ -664,6 +679,7 @@ export interface SolicitudDetalle {
   createdAt: string;
   updatedAt: string;
   tecnico: TecnicoAsignado;
+  estado: EstadoSolicitud;
 }
 
 export async function getSolicitudPorId(id: string): Promise<SolicitudDetalle> {
@@ -858,6 +874,183 @@ export function ChatHeader({ solicitudId }: ChatHeaderProps) {
             {tecnico.disponible ? "En línea" : "Desconectado"}
           </Text>
         </Text>
+      </View>
+    </View>
+  );
+}
+```
+
+---
+
+## Indicador de estado (C31)
+
+La pantalla de seguimiento del servicio (`GET /api/requests/:id`) incluye en la respuesta el objeto `estado`, diseñado específicamente para renderizar un indicador de progreso visual por etapas y reflejar la trazabilidad del servicio.
+
+### 1. Estructura del objeto `estado`
+
+```typescript
+export interface HistorialEstadoItem {
+  codigo: "PENDING" | "ACCEPTED" | "ON_THE_WAY" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+  texto: string;
+  fecha: string; // ISO string
+}
+
+export interface EstadoSolicitud {
+  codigo: "PENDING" | "ACCEPTED" | "ON_THE_WAY" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+  texto: string;             // Etiqueta legible (ej. "Técnico en camino")
+  paso: number | null;       // Paso actual (1 a 5) o null si fue cancelado
+  totalPasos: number;        // Total de pasos del flujo normal (5)
+  color: string;             // Color sugerido en formato hex (ej. "#8B5CF6")
+  historial: HistorialEstadoItem[]; // Logs ordenados cronológicamente
+}
+```
+
+### 2. Pautas de integración y UX en el Frontend
+
+1. **Barra de progreso numerada (1 al 5):**
+   - Usa `estado.paso` y `estado.totalPasos` para calcular el porcentaje de avance: `(estado.paso / estado.totalPasos) * 100`%.
+   - Si `estado.paso` es 1, el servicio está en *Pendiente de aceptación*; si es 2, *Aceptado*; si es 3, *Técnico en camino*; si es 4, *Servicio en progreso*; si es 5, *Finalizado*.
+2. **Etiqueta principal:**
+   - Muestra directamente `estado.texto` en la cabecera del indicador con el color sugerido en `estado.color`.
+3. **Caso especial: Cancelación (`CANCELLED`):**
+   - Cuando el estado es `"CANCELLED"`, `estado.paso` es `null`.
+   - No muestres la barra de progreso estándar del 1 al 5; en su lugar, renderiza una tarjeta o banner destacado con fondo rojo suave (`#FEE2E2`), texto *"Servicio Cancelado"* y la fecha del historial en que se canceló.
+4. **Refresco automático y reconexión:**
+   - Como el estado del servicio cambia a medida que el técnico interactúa con su aplicación, la pantalla de seguimiento del cliente debe refrescar la información periódicamente:
+     - **Polling periódico:** Configurar un `setInterval` cada **15 segundos** mientras la pantalla permanezca montada.
+     - **Al volver a enfocar la pantalla:** Usar `useFocusEffect` de `expo-router` para volver a invocar `getSolicitudPorId(id)` cuando el usuario regrese a la app o a la pestaña.
+5. **Acción de cancelación por el cliente (`PATCH /api/requests/:id/status`):**
+   - El cliente solo puede cancelar el servicio si se encuentra en estado `PENDING` o `ACCEPTED`:
+     ```typescript
+     export async function cancelarSolicitud(id: string): Promise<SolicitudDetalle> {
+       const token = await getAuthToken();
+       const res = await fetch(`${API_URL}/api/requests/${encodeURIComponent(id)}/status`, {
+         method: "PATCH",
+         headers: {
+           Authorization: `Bearer ${token}`,
+           "Content-Type": "application/json",
+         },
+         body: JSON.stringify({ status: "CANCELLED" }),
+       });
+       if (!res.ok) {
+         const errorBody = await res.json().catch(() => ({}));
+         throw new Error(errorBody.error || "No se pudo cancelar la solicitud.");
+       }
+       return res.json();
+     }
+     ```
+
+### 3. Ejemplo de componente `IndicadorEstado.tsx`
+
+```tsx
+import React, { useEffect, useState, useCallback } from "react";
+import { View, Text, ActivityIndicator } from "react-native";
+import { useFocusEffect } from "expo-router";
+import { getSolicitudPorId, SolicitudDetalle } from "@/services/api";
+
+const PASOS_NOMBRES = [
+  "Pendiente",
+  "Aceptado",
+  "En camino",
+  "En progreso",
+  "Finalizado",
+];
+
+export function IndicadorEstado({ solicitudId }: { solicitudId: string }) {
+  const [solicitud, setSolicitud] = useState<SolicitudDetalle | null>(null);
+
+  const cargar = useCallback(async () => {
+    try {
+      const data = await getSolicitudPorId(solicitudId);
+      setSolicitud(data);
+    } catch (err) {
+      console.error("Error al actualizar estado:", err);
+    }
+  }, [solicitudId]);
+
+  // Refrescar al enfocar y mediante polling cada 15 segundos
+  useFocusEffect(
+    useCallback(() => {
+      cargar();
+      const interval = setInterval(cargar, 15000);
+      return () => clearInterval(interval);
+    }, [cargar])
+  );
+
+  if (!solicitud) return <ActivityIndicator size="small" color="#2563EB" />;
+
+  const { estado } = solicitud;
+
+  // Caso Cancelado
+  if (estado.codigo === "CANCELLED") {
+    return (
+      <View className="bg-red-50 border border-red-200 p-4 rounded-xl mb-4">
+        <Text className="text-red-700 font-bold text-base">⚠️ Solicitud Cancelada</Text>
+        <Text className="text-red-600 text-sm mt-1">
+          Este servicio ha sido cancelado.
+        </Text>
+      </View>
+    );
+  }
+
+  const pasoActual = estado.paso ?? 1;
+
+  return (
+    <View className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-4">
+      {/* Etiqueta de Estado Actual */}
+      <View className="flex-row items-center justify-between mb-3">
+        <Text className="text-sm text-slate-500 font-medium">Estado del servicio</Text>
+        <View
+          style={{ backgroundColor: `${estado.color}20` }}
+          className="px-3 py-1 rounded-full"
+        >
+          <Text style={{ color: estado.color }} className="font-bold text-xs">
+            {estado.texto}
+          </Text>
+        </View>
+      </View>
+
+      {/* Barra de Progreso Visual */}
+      <View className="flex-row items-center justify-between mt-2">
+        {PASOS_NOMBRES.map((nombre, idx) => {
+          const numPaso = idx + 1;
+          const completado = numPaso <= pasoActual;
+          const esActual = numPaso === pasoActual;
+
+          return (
+            <React.Fragment key={nombre}>
+              <View className="items-center">
+                <View
+                  style={{
+                    backgroundColor: completado ? estado.color : "#E2E8F0",
+                  }}
+                  className={`w-7 h-7 rounded-full items-center justify-center ${
+                    esActual ? "ring-2 ring-offset-2 ring-blue-500" : ""
+                  }`}
+                >
+                  <Text className={`text-xs font-bold ${completado ? "text-white" : "text-slate-500"}`}>
+                    {numPaso}
+                  </Text>
+                </View>
+                <Text
+                  className={`text-[10px] mt-1 ${
+                    completado ? "text-slate-800 font-semibold" : "text-slate-400"
+                  }`}
+                >
+                  {nombre}
+                </Text>
+              </View>
+              {idx < PASOS_NOMBRES.length - 1 && (
+                <View
+                  style={{
+                    backgroundColor: numPaso < pasoActual ? estado.color : "#E2E8F0",
+                  }}
+                  className="flex-1 h-1 mx-1 -mt-4"
+                />
+              )}
+            </React.Fragment>
+          );
+        })}
       </View>
     </View>
   );

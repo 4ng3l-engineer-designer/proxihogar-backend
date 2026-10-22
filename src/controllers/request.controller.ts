@@ -56,4 +56,45 @@ export class RequestController {
       });
     }
   };
+
+  updateStatus = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+      const { status } = req.body;
+      const result = await this.requestService.updateStatus(
+        req.params.id,
+        status,
+        userId,
+        userRole
+      );
+      res.status(200).json(result);
+    } catch (error) {
+      if (error instanceof HttpError) {
+        res.status(error.statusCode).json({ error: error.message });
+        return;
+      }
+      console.error("Error al actualizar estado de solicitud:", error);
+      res.status(500).json({
+        error: "Ocurrió un error interno al procesar la solicitud.",
+      });
+    }
+  };
+
+  getWorkerRequests = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const workerUserId = req.user!.id;
+      const result = await this.requestService.getWorkerRequests(workerUserId);
+      res.status(200).json(result);
+    } catch (error) {
+      if (error instanceof HttpError) {
+        res.status(error.statusCode).json({ error: error.message });
+        return;
+      }
+      console.error("Error al listar solicitudes del técnico:", error);
+      res.status(500).json({
+        error: "Ocurrió un error interno al procesar la solicitud.",
+      });
+    }
+  };
 }

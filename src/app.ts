@@ -6,6 +6,7 @@ import authRoutes from "./routes/auth.routes";
 import technicianRoutes from "./routes/technician.routes";
 import districtRoutes from "./routes/district.routes";
 import requestRoutes from "./routes/request.routes";
+import requestStatusRoutes from "./routes/requestStatus.routes";
 
 const app: Application = express();
 
@@ -20,5 +21,6 @@ app.use("/api/auth", authRoutes);
 app.use("/api/technicians", technicianRoutes);
 app.use("/api/districts", districtRoutes);
 app.use("/api/requests", requestRoutes);
+app.use("/api/request-statuses", requestStatusRoutes);
 
 export default app;

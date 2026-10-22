@@ -33,6 +33,21 @@ export interface TecnicoAsignadoResponse {
   calculoAproximado?: boolean;
 }
 
+export interface HistorialEstadoItem {
+  codigo: RequestStatus;
+  texto: string;
+  fecha: Date;
+}
+
+export interface EstadoSolicitudResponse {
+  codigo: RequestStatus;
+  texto: string;
+  paso: number | null;
+  totalPasos: number;
+  color: string;
+  historial: HistorialEstadoItem[];
+}
+
 export interface RequestResponse {
   id: string;
   status: RequestStatus;
@@ -43,4 +58,25 @@ export interface RequestResponse {
   createdAt: Date;
   updatedAt: Date;
   tecnico: TecnicoAsignadoResponse;
+  estado: EstadoSolicitudResponse;
+}
+
+export interface ClienteSolicitudResponse {
+  nombre: string;
+  telefono: string | null;
+}
+
+export interface WorkerRequestResponse {
+  id: string;
+  status: RequestStatus;
+  direccion: string;
+  tipoProblema: string;
+  descripcion: string;
+  radio: string;
+  latitude: number | null;
+  longitude: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+  cliente: ClienteSolicitudResponse;
+  estado: EstadoSolicitudResponse;
 }

@@ -56,4 +56,20 @@ export class TechnicianRepository {
       },
     });
   }
+
+  /**
+   * Obtiene un técnico por el userId asociado a su cuenta.
+   */
+  async findByUserId(userId: string) {
+    return prisma.technician.findUnique({
+      where: { userId },
+      include: {
+        user: {
+          select: {
+            telefono: true,
+          },
+        },
+      },
+    });
+  }
 }

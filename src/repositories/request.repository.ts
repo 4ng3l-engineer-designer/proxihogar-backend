@@ -1,6 +1,6 @@
 // src/repositories/request.repository.ts
 import { prisma } from "../utils/prisma";
-import { Prisma } from "@prisma/client";
+import { Prisma, RequestStatus } from "@prisma/client";
 
 export type RequestWithTechnician = Prisma.RequestGetPayload<{
   include: {
@@ -11,6 +11,27 @@ export type RequestWithTechnician = Prisma.RequestGetPayload<{
             telefono: true;
           };
         };
+      };
+    };
+    statusLogs: {
+      orderBy: {
+        createdAt: "asc";
+      };
+    };
+  };
+}>;
+
+export type WorkerRequestWithClient = Prisma.RequestGetPayload<{
+  include: {
+    client: {
+      select: {
+        nombre: true;
+        telefono: true;
+      };
+    };
+    statusLogs: {
+      orderBy: {
+        createdAt: "asc";
       };
     };
   };
@@ -35,8 +56,15 @@ export class RequestRepository {
         tipoProblema: data.tipoProblema,
         descripcion: data.descripcion,
         radio: data.radio || "5km",
+        status: RequestStatus.PENDING,
         latitude: data.latitude,
         longitude: data.longitude,
+        statusLogs: {
+          create: {
+            status: RequestStatus.PENDING,
+            changedBy: data.clientId,
+          },
+        },
       },
       include: {
         technician: {
@@ -46,6 +74,11 @@ export class RequestRepository {
                 telefono: true,
               },
             },
+          },
+        },
+        statusLogs: {
+          orderBy: {
+            createdAt: "asc",
           },
         },
       },
@@ -66,6 +99,11 @@ export class RequestRepository {
             },
           },
         },
+        statusLogs: {
+          orderBy: {
+            createdAt: "asc",
+          },
+        },
       },
     });
   }
@@ -81,6 +119,70 @@ export class RequestRepository {
                 telefono: true,
               },
             },
+          },
+        },
+        statusLogs: {
+          orderBy: {
+            createdAt: "asc",
+          },
+        },
+      },
+    });
+  }
+
+  async updateStatus(
+    id: string,
+    newStatus: RequestStatus,
+    changedBy: string
+  ): Promise<RequestWithTechnician> {
+    return prisma.$transaction(async (tx) => {
+      await tx.requestStatusLog.create({
+        data: {
+          requestId: id,
+          status: newStatus,
+          changedBy,
+        },
+      });
+
+      return tx.request.update({
+        where: { id },
+        data: {
+          status: newStatus,
+        },
+        include: {
+          technician: {
+            include: {
+              user: {
+                select: {
+                  telefono: true,
+                },
+              },
+            },
+          },
+          statusLogs: {
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
+        },
+      });
+    });
+  }
+
+  async findByTechnicianId(technicianId: string): Promise<WorkerRequestWithClient[]> {
+    return prisma.request.findMany({
+      where: { technicianId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        client: {
+          select: {
+            nombre: true,
+            telefono: true,
+          },
+        },
+        statusLogs: {
+          orderBy: {
+            createdAt: "asc",
           },
         },
       },
