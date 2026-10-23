@@ -1,7 +1,8 @@
 // src/services/request.service.ts
-import { RequestStatus, Role } from "@prisma/client";
+import { MessageType, RequestStatus, Role } from "@prisma/client";
 import { RequestRepository, RequestWithTechnician } from "../repositories/request.repository";
 import { TechnicianRepository } from "../repositories/technician.repository";
+import { MessageRepository } from "../repositories/message.repository";
 import {
   ChatAccessResponse,
   ContraparteChatResponse,
@@ -12,16 +13,19 @@ import {
   TecnicoAsignadoResponse,
   WorkerRequestResponse,
 } from "../types/request.types";
+import { MessageResponse, MessagesListResponse } from "../types/message.types";
 import { HttpError } from "../utils/errors";
 import { calculateHaversineDistance, estimateArrivalTime, formatDistance } from "../utils/haversine";
 import { formatTarifa, MONEDA } from "../utils/currency";
 import { isTransitionAllowed, STATUS_CONFIG, TOTAL_PASOS } from "../utils/requestStatus";
 import { getChatAccess, getInitials } from "../utils/chatAccess";
+import { emitChatMessage, emitRequestStatus } from "../realtime/socket";
 
 export class RequestService {
   constructor(
     private readonly requestRepository = new RequestRepository(),
-    private readonly technicianRepository = new TechnicianRepository()
+    private readonly technicianRepository = new TechnicianRepository(),
+    private readonly messageRepository = new MessageRepository()
   ) {}
 
   async createRequest(clientId: string, dto: CreateRequestDto): Promise<RequestResponse> {
@@ -162,7 +166,17 @@ export class RequestService {
 
     // 4. Guardar cambio y registrar log
     const updatedRequest = await this.requestRepository.updateStatus(id, nextStatus, userId);
-    return this.mapToResponse(updatedRequest);
+    const mappedResponse = this.mapToResponse(updatedRequest);
+
+    // 5. Emitir cambio de estado a la sala de Socket.io
+    emitRequestStatus(id, {
+      requestId: mappedResponse.id,
+      status: mappedResponse.status,
+      estado: mappedResponse.estado,
+      chat: mappedResponse.chat,
+    });
+
+    return mappedResponse;
   }
 
   async getWorkerRequests(userId: string): Promise<WorkerRequestResponse[]> {
@@ -198,18 +212,12 @@ export class RequestService {
     userId: string,
     userRole: Role
   ): Promise<ChatAccessResponse> {
-    const request = await this.requestRepository.findById(id);
-    if (!request) {
-      throw new HttpError(404, "Solicitud no encontrada.");
-    }
+    const request = await this.validateParticipant(id, userId, userRole);
 
     let miRol: "CLIENT" | "WORKER";
     let contraparte: ContraparteChatResponse;
 
     if (userRole === Role.CLIENT) {
-      if (request.clientId !== userId) {
-        throw new HttpError(404, "Solicitud no encontrada.");
-      }
       miRol = "CLIENT";
       contraparte = {
         id: request.technician.id,
@@ -220,11 +228,7 @@ export class RequestService {
         especialidad: request.technician.especialidad,
         disponible: request.technician.disponible,
       };
-    } else if (userRole === Role.WORKER) {
-      const tech = await this.technicianRepository.findByUserId(userId);
-      if (!tech || request.technicianId !== tech.id) {
-        throw new HttpError(404, "Solicitud no encontrada.");
-      }
+    } else {
       miRol = "WORKER";
       contraparte = {
         id: request.client.id,
@@ -235,8 +239,6 @@ export class RequestService {
         especialidad: null,
         disponible: null,
       };
-    } else {
-      throw new HttpError(404, "Solicitud no encontrada.");
     }
 
     const chat = getChatAccess(request.status);
@@ -251,6 +253,127 @@ export class RequestService {
       miRol,
       contraparte,
     };
+  }
+
+  async getMessages(
+    requestId: string,
+    userId: string,
+    userRole: Role,
+    options: { limit?: number; before?: string }
+  ): Promise<MessagesListResponse> {
+    const request = await this.validateParticipant(requestId, userId, userRole);
+
+    const chat = getChatAccess(request.status);
+    if (!chat.disponible) {
+      throw new HttpError(403, chat.motivo || "El chat no está disponible para este servicio.");
+    }
+
+    const limit = Math.min(Math.max(Number(options.limit) || 30, 1), 100);
+    const { mensajes, hayMas } = await this.messageRepository.findByRequestId(requestId, {
+      limit,
+      before: options.before,
+    });
+
+    return {
+      mensajes: mensajes.map((m) => ({
+        id: m.id,
+        requestId: m.requestId,
+        tipo: m.tipo,
+        contenido: m.contenido,
+        createdAt: m.createdAt,
+        senderId: m.senderId,
+        senderRole: m.senderRole,
+        esMio: m.senderId === userId,
+      })),
+      hayMas,
+    };
+  }
+
+  async createMessage(
+    requestId: string,
+    userId: string,
+    userRole: Role,
+    contenidoInput: unknown
+  ): Promise<MessageResponse> {
+    const request = await this.validateParticipant(requestId, userId, userRole);
+
+    const chat = getChatAccess(request.status);
+    if (!chat.disponible) {
+      throw new HttpError(403, chat.motivo || "El chat no está disponible para este servicio.");
+    }
+
+    if (chat.soloLectura) {
+      throw new HttpError(409, "El servicio finalizó; el chat es solo de lectura");
+    }
+
+    if (typeof contenidoInput !== "string") {
+      throw new HttpError(400, "El campo 'contenido' es obligatorio.");
+    }
+
+    const trimmed = contenidoInput.trim();
+    if (trimmed.length === 0) {
+      throw new HttpError(400, "El campo 'contenido' no puede estar vacío.");
+    }
+
+    if (trimmed.length > 1000) {
+      throw new HttpError(400, "El contenido no puede superar los 1000 caracteres.");
+    }
+
+    const message = await this.messageRepository.create({
+      requestId,
+      senderId: userId,
+      senderRole: userRole,
+      tipo: MessageType.TEXT,
+      contenido: trimmed,
+    });
+
+    // Emitir mensaje en tiempo real a la sala de Socket.io
+    emitChatMessage(requestId, {
+      id: message.id,
+      requestId: message.requestId,
+      tipo: message.tipo,
+      contenido: message.contenido,
+      createdAt: message.createdAt,
+      senderId: message.senderId,
+      senderRole: message.senderRole,
+    });
+
+    return {
+      id: message.id,
+      requestId: message.requestId,
+      tipo: message.tipo,
+      contenido: message.contenido,
+      createdAt: message.createdAt,
+      senderId: message.senderId,
+      senderRole: message.senderRole,
+      esMio: true,
+    };
+  }
+
+  private async validateParticipant(
+    requestId: string,
+    userId: string,
+    userRole: Role
+  ): Promise<RequestWithTechnician> {
+    const request = await this.requestRepository.findById(requestId);
+    if (!request) {
+      throw new HttpError(404, "Solicitud no encontrada.");
+    }
+
+    if (userRole === Role.CLIENT) {
+      if (request.clientId !== userId) {
+        throw new HttpError(404, "Solicitud no encontrada.");
+      }
+    } else if (userRole === Role.WORKER) {
+      const tech = await this.technicianRepository.findByUserId(userId);
+      if (!tech || request.technicianId !== tech.id) {
+        throw new HttpError(404, "Solicitud no encontrada.");
+      }
+    } else {
+      throw new HttpError(404, "Solicitud no encontrada.");
+    }
+
+    return request;
   }
 
   private buildEstado(

@@ -53,8 +53,19 @@ async function main() {
     },
   });
 
-  // 4. Borrar solo las solicitudes (Request) cuyo clientId sea un usuario del seed (NO borra las de clientes reales)
+  // 4. Borrar solo los mensajes y solicitudes (Request) de clientes del seed (NO borra las de clientes reales)
   if (seedUserIds.length > 0) {
+    const seedRequests = await prisma.request.findMany({
+      where: { clientId: { in: seedUserIds } },
+      select: { id: true },
+    });
+    const seedRequestIds = seedRequests.map((r) => r.id);
+    if (seedRequestIds.length > 0) {
+      await prisma.message.deleteMany({
+        where: { requestId: { in: seedRequestIds } },
+      });
+    }
+
     await prisma.request.deleteMany({
       where: {
         clientId: { in: seedUserIds },

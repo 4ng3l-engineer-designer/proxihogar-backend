@@ -17,6 +17,10 @@ router.get("/", requireRole(Role.CLIENT), requestController.getAll);
 // Acceso al chat (disponible para CLIENT dueño y WORKER asignado)
 router.get("/:id/chat", requestController.getChatAccess);
 
+// Mensajes del chat (disponible para CLIENT dueño y WORKER asignado)
+router.get("/:id/messages", requestController.getMessages);
+router.post("/:id/messages", requestController.createMessage);
+
 // Detalle de solicitud (CLIENT)
 router.get("/:id", requireRole(Role.CLIENT), requestController.getById);
 

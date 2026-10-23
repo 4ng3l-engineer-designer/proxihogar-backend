@@ -553,6 +553,177 @@ Authorization: Bearer <token>
 
 ---
 
+### 4.4 Obtener historial de mensajes del chat
+```
+GET /api/requests/:id/messages
+```
+
+Disponible para el **cliente dueño** o el **técnico asignado**. Permite consultar el historial de mensajes de texto con paginación cursor-based hacia atrás (`before`).
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Query Params (opcionales):**
+| Parámetro | Tipo | Default | Descripción |
+| :--- | :--- | :--- | :--- |
+| `limit` | number | 30 | Cantidad máxima de mensajes a devolver (mínimo 1, máximo 100). |
+| `before` | string | - | ID de un mensaje. Retorna los mensajes anteriores (más antiguos) a ese mensaje. |
+
+**Reglas de acceso:**
+- **404 Not Found:** La solicitud no existe o el usuario no es participante.
+- **403 Forbidden:** El chat no está disponible en el estado actual (`PENDING` o `CANCELLED`).
+- En estado `COMPLETED` el chat es de solo lectura, por lo que **sí permite leer los mensajes** (200 OK).
+- Los mensajes se devuelven ordenados **cronológicamente del más antiguo al más reciente**.
+
+**Respuesta 200 OK:**
+```json
+{
+  "mensajes": [
+    {
+      "id": "c1f72a4d-82d2-4318-8f83-e0709f635671",
+      "requestId": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
+      "tipo": "TEXT",
+      "contenido": "Hola, estoy llegando en 10 minutos.",
+      "createdAt": "2026-10-22T20:15:30.000Z",
+      "senderId": "9837e9b0-0093-4ab1-9851-465a7031a941",
+      "senderRole": "WORKER",
+      "esMio": false
+    },
+    {
+      "id": "b3e921d0-11fa-4091-bb29-e58f00128e45",
+      "requestId": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
+      "tipo": "TEXT",
+      "contenido": "Perfecto Juan, te espero en la puerta.",
+      "createdAt": "2026-10-22T20:16:10.000Z",
+      "senderId": "3339f0ad-83a2-4f82-becb-82225d6a7489",
+      "senderRole": "CLIENT",
+      "esMio": true
+    }
+  ],
+  "hayMas": false
+}
+```
+
+**Errores:**
+- **401 Unauthorized:** Token no proporcionado o expirado.
+- **403 Forbidden:** Chat no disponible (`PENDING` o `CANCELLED`).
+- **404 Not Found:** Solicitud no encontrada, usuario no participante o mensaje de referencia (`before`) no existe.
+
+---
+
+### 4.5 Enviar mensaje de chat
+```
+POST /api/requests/:id/messages
+```
+
+Disponible para el cliente dueño o el técnico asignado. Guarda un nuevo mensaje de texto en la conversación y lo emite en tiempo real vía Socket.io a la sala `request:<requestId>`.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Body (JSON):**
+| Campo | Tipo | Requerido | Descripción |
+| :--- | :--- | :--- | :--- |
+| `contenido` | string | Sí | Texto del mensaje (se recortan espacios; longitud 1 a 1000 caracteres). |
+
+**Reglas de negocio:**
+- Si `contenido` no se envía, no es texto, está vacío o supera los 1000 caracteres: **400 Bad Request**.
+- Si el usuario no es participante o la solicitud no existe: **404 Not Found**.
+- Si el chat no está disponible (`PENDING` o `CANCELLED`): **403 Forbidden** con el motivo.
+- Si el servicio finalizó (`COMPLETED` / `chat.soloLectura === true`): **409 Conflict** con `"El servicio finalizó; el chat es solo de lectura"`.
+
+**Respuesta 201 Created:**
+```json
+{
+  "id": "8c59f201-9031-41ae-ba5a-19e0cf558fa3",
+  "requestId": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
+  "tipo": "TEXT",
+  "contenido": "Ya estoy afuera del domicilio.",
+  "createdAt": "2026-10-22T20:18:00.000Z",
+  "senderId": "9837e9b0-0093-4ab1-9851-465a7031a941",
+  "senderRole": "WORKER",
+  "esMio": true
+}
+```
+
+---
+
+### 4.6 Tiempo Real con Socket.io (C37)
+
+El servidor cuenta con Socket.io montado sobre el mismo puerto HTTP con soporte CORS habilitado. El envío de mensajes se realiza siempre por REST (`POST /api/requests/:id/messages`); el socket se utiliza exclusivamente para recibir eventos en tiempo real.
+
+#### Conexión y autenticación
+El cliente debe enviar el token JWT en el objeto `auth` del handshake:
+```javascript
+import { io } from "socket.io-client";
+
+const socket = io("https://proxihogar-backend-production.up.railway.app", {
+  auth: {
+    token: "<JWT_DEL_USUARIO>",
+  },
+});
+```
+- Si el token no se envía o es inválido/expirado, la conexión es **rechazada** por el servidor disparando el evento `connect_error` en el cliente.
+
+#### Eventos del cliente hacia el servidor
+
+1. **`chat:join`** (Unirse a la sala de la solicitud):
+   - Envía: `{ requestId: "string" }`
+   - Callback: `(response: { ok: boolean, error?: string }) => void`
+   - Valida que el usuario sea participante y que el chat esté disponible (`ACCEPTED`, `ON_THE_WAY`, `IN_PROGRESS` o `COMPLETED`).
+   - Si es válido, une el socket a la sala `request:<requestId>` y responde `{ ok: true }`.
+   - Si no, responde `{ ok: false, error: "mensaje de motivo" }`.
+
+2. **`chat:leave`** (Salir de la sala):
+   - Envía: `{ requestId: "string" }`
+   - Saca al socket de la sala `request:<requestId>`.
+
+#### Eventos emitidos por el servidor hacia la sala `request:<requestId>`
+
+1. **`chat:message`** (Nuevo mensaje enviado):
+   Se emite automáticamente tras guardar un mensaje exitosamente vía `POST /api/requests/:id/messages`.
+   ```json
+   {
+     "id": "8c59f201-9031-41ae-ba5a-19e0cf558fa3",
+     "requestId": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
+     "tipo": "TEXT",
+     "contenido": "Ya estoy afuera del domicilio.",
+     "createdAt": "2026-10-22T20:18:00.000Z",
+     "senderId": "9837e9b0-0093-4ab1-9851-465a7031a941",
+     "senderRole": "WORKER"
+   }
+   ```
+   > **Cálculo de `esMio`:** Como el evento se transmite a toda la sala, cada cliente calcula localmente si el mensaje es suyo comparando: `esMio = msg.senderId === usuarioActual.id`.
+
+2. **`request:status`** (Cambio de estado del servicio):
+   Se emite automáticamente cuando se actualiza el estado de la solicitud vía `PATCH /api/requests/:id/status`.
+   ```json
+   {
+     "requestId": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
+     "status": "COMPLETED",
+     "estado": {
+       "codigo": "COMPLETED",
+       "texto": "Finalizado",
+       "paso": 5,
+       "totalPasos": 5,
+       "color": "#10B981",
+       "historial": [ ... ]
+     },
+     "chat": {
+       "disponible": true,
+       "soloLectura": true,
+       "motivo": "El servicio finalizó; el chat es solo de lectura"
+     }
+   }
+   ```
+
+---
+
 ## 5. Ejemplo de consumo (TypeScript)
 
 ```typescript

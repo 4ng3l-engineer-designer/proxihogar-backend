@@ -119,4 +119,55 @@ export class RequestController {
       });
     }
   };
+
+  getMessages = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+      const requestId = req.params.id;
+      const limit = req.query.limit ? Number(req.query.limit) : undefined;
+      const before = typeof req.query.before === "string" ? req.query.before : undefined;
+
+      const result = await this.requestService.getMessages(requestId, userId, userRole, {
+        limit,
+        before,
+      });
+      res.status(200).json(result);
+    } catch (error) {
+      if (error instanceof HttpError) {
+        res.status(error.statusCode).json({ error: error.message });
+        return;
+      }
+      console.error("Error al obtener historial de mensajes:", error);
+      res.status(500).json({
+        error: "Ocurrió un error interno al procesar la solicitud.",
+      });
+    }
+  };
+
+  createMessage = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+      const requestId = req.params.id;
+      const { contenido } = req.body;
+
+      const result = await this.requestService.createMessage(
+        requestId,
+        userId,
+        userRole,
+        contenido
+      );
+      res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof HttpError) {
+        res.status(error.statusCode).json({ error: error.message });
+        return;
+      }
+      console.error("Error al enviar mensaje:", error);
+      res.status(500).json({
+        error: "Ocurrió un error interno al procesar la solicitud.",
+      });
+    }
+  };
 }

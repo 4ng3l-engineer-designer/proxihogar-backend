@@ -976,6 +976,384 @@ export function ChatHeader({ solicitudId }: ChatHeaderProps) {
 
 ---
 
+## Pantalla de chat (C37)
+
+La funcionalidad de chat de texto en tiempo real (`HU C37`) permite a los participantes (cliente y técnico asignado) comunicarse mientras el servicio está activo o revisar el historial si el servicio finalizó.
+
+### 1. Arquitectura y Reglas Clave
+
+- **Historial y paginación:** Se consulta con `GET /api/requests/:id/messages` (parámetros opcionales `limit` y `before`).
+- **Envío de mensajes:** Se realiza **exclusivamente por REST** mediante `POST /api/requests/:id/messages` con body `{ "contenido": "..." }`. El socket se usa solo para recibir eventos.
+- **Tiempo real (Socket.io):** Se conecta a la URL del backend pasando `auth: { token }`.
+- **Salas:** Al abrir la pantalla de chat se emite `chat:join` con `{ requestId }`; al salir o desmontar el componente, se emite `chat:leave` con `{ requestId }`.
+- **Recepción en tiempo real (`chat:message`):** Al recibir un mensaje del socket, se añade a la lista **evitando duplicados por `id`** (en caso de que el mensaje ya haya sido agregado por la respuesta del POST o por refresco).
+- **Identificación de mensajes propios:** Se utiliza la propiedad `esMio` (devuelta en el GET/POST) o se compara `msg.senderId === miUsuarioId` para alinear las burbujas (derecha para los propios, izquierda para la contraparte).
+- **Solo lectura en servicios completados:** Si `chat.soloLectura === true` (estado `COMPLETED`), se debe desactivar el campo de entrada de texto y el botón de envío, mostrando el mensaje informativo: *"El servicio finalizó; el chat es solo de lectura"*.
+- **Mecanismo de respaldo (Fallback polling):** Si la conexión con Socket.io se cae o falla (`connect_error` o `disconnect`), la aplicación debe activar un sondeo periódico llamando a `GET /api/requests/:id/messages` cada **10 segundos** como respaldo hasta restablecer la conexión.
+
+---
+
+### 2. Definición de tipos y llamadas a la API (`src/services/chatApi.ts`)
+
+```typescript
+// src/services/chatApi.ts
+import { API_URL } from "../constants/api";
+import { getAuthToken } from "./authStorage";
+
+export interface MensajeChat {
+  id: string;
+  requestId: string;
+  tipo: "TEXT";
+  contenido: string;
+  createdAt: string; // ISO Date string
+  senderId: string;
+  senderRole: "CLIENT" | "WORKER";
+  esMio?: boolean;
+}
+
+export interface HistorialMensajesResponse {
+  mensajes: MensajeChat[];
+  hayMas: boolean;
+}
+
+// 1. Cargar historial con paginación
+export async function getHistorialMensajes(
+  requestId: string,
+  limit: number = 30,
+  before?: string
+): Promise<HistorialMensajesResponse> {
+  const token = await getAuthToken();
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (before) query.append("before", before);
+
+  const res = await fetch(`${API_URL}/api/requests/${encodeURIComponent(requestId)}/messages?${query.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => ({}));
+    throw new Error(errorBody.error || `Error ${res.status} al cargar mensajes.`);
+  }
+
+  return res.json();
+}
+
+// 2. Enviar mensaje por POST
+export async function enviarMensajeChat(
+  requestId: string,
+  contenido: string
+): Promise<MensajeChat> {
+  const token = await getAuthToken();
+  const res = await fetch(`${API_URL}/api/requests/${encodeURIComponent(requestId)}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ contenido }),
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => ({}));
+    throw new Error(errorBody.error || `Error ${res.status} al enviar mensaje.`);
+  }
+
+  return res.json();
+}
+```
+
+---
+
+### 3. Ejemplo de Pantalla Completa de Chat (`PantallaChat.tsx`)
+
+```tsx
+import React, { useEffect, useState, useRef, useCallback } from "react";
+import {
+  View,
+  Text,
+  FlatList,
+  TextInput,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  Alert,
+} from "react-native";
+import { io, Socket } from "socket.io-client";
+import { API_URL } from "@/constants/api";
+import { getAuthToken } from "@/services/authStorage";
+import { getHistorialMensajes, enviarMensajeChat, MensajeChat } from "@/services/chatApi";
+import { getChatAccess, ChatAccessData } from "@/services/api";
+import { ChatHeader } from "@/components/ChatHeader";
+
+interface Props {
+  solicitudId: string;
+  miUsuarioId: string;
+}
+
+export function PantallaChat({ solicitudId, miUsuarioId }: Props) {
+  const [mensajes, setMensajes] = useState<MensajeChat[]>([]);
+  const [nuevoTexto, setNuevoTexto] = useState("");
+  const [cargando, setCargando] = useState(true);
+  const [cargandoMas, setCargandoMas] = useState(false);
+  const [hayMas, setHayMas] = useState(false);
+  const [chatInfo, setChatInfo] = useState<ChatAccessData | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  const [socketConectado, setSocketConectado] = useState(false);
+
+  const socketRef = useRef<Socket | null>(null);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const flatListRef = useRef<FlatList>(null);
+
+  // 1. Cargar estado y acceso del chat
+  const cargarAccesoYPrimerosMensajes = useCallback(async () => {
+    try {
+      setCargando(true);
+      const [acceso, dataMensajes] = await Promise.all([
+        getChatAccess(solicitudId),
+        getHistorialMensajes(solicitudId, 30),
+      ]);
+
+      setChatInfo(acceso);
+      setMensajes(dataMensajes.mensajes);
+      setHayMas(dataMensajes.hayMas);
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "No se pudo acceder al chat.");
+    } finally {
+      setCargando(false);
+    }
+  }, [solicitudId]);
+
+  // 2. Conectar Socket.io y gestionar eventos
+  useEffect(() => {
+    let socket: Socket;
+
+    async function initSocket() {
+      const token = await getAuthToken();
+      if (!token) return;
+
+      socket = io(API_URL, {
+        auth: { token },
+        transports: ["websocket", "polling"],
+      });
+      socketRef.current = socket;
+
+      socket.on("connect", () => {
+        setSocketConectado(true);
+        // Desactivar polling de respaldo si estaba activo
+        if (pollingRef.current) {
+          clearInterval(pollingRef.current);
+          pollingRef.current = null;
+        }
+
+        // Unirse a la sala de la solicitud
+        socket.emit("chat:join", { requestId: solicitudId }, (res: { ok: boolean; error?: string }) => {
+          if (!res.ok) {
+            console.warn("No se pudo unir a la sala:", res.error);
+          }
+        });
+      });
+
+      // Recibir nuevo mensaje en tiempo real
+      socket.on("chat:message", (msg: MensajeChat) => {
+        setMensajes((prev) => {
+          // Evitar mensajes duplicados por ID
+          if (prev.some((m) => m.id === msg.id)) {
+            return prev;
+          }
+          return [...prev, msg];
+        });
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      });
+
+      // Recibir actualización de estado de la solicitud
+      socket.on("request:status", (data: any) => {
+        if (data.chat) {
+          setChatInfo((prev) => (prev ? { ...prev, chat: data.chat } : null));
+        }
+      });
+
+      // Si hay error de conexión o desconexión, activar sondeo de respaldo cada 10s
+      const activarRespaldo = () => {
+        setSocketConectado(false);
+        if (!pollingRef.current) {
+          pollingRef.current = setInterval(async () => {
+            try {
+              const res = await getHistorialMensajes(solicitudId, 30);
+              setMensajes(res.mensajes);
+            } catch (err) {
+              console.warn("Fallo polling de respaldo:", err);
+            }
+          }, 10000);
+        }
+      };
+
+      socket.on("connect_error", activarRespaldo);
+      socket.on("disconnect", activarRespaldo);
+    }
+
+    cargarAccesoYPrimerosMensajes();
+    initSocket();
+
+    // Limpieza al desmontar
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.emit("chat:leave", { requestId: solicitudId });
+        socketRef.current.disconnect();
+      }
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+    };
+  }, [solicitudId, cargarAccesoYPrimerosMensajes]);
+
+  // 3. Cargar mensajes anteriores (Paginación con "before")
+  const cargarMasMensajes = async () => {
+    if (!hayMas || cargandoMas || mensajes.length === 0) return;
+
+    try {
+      setCargandoMas(true);
+      const primerMensaje = mensajes[0];
+      const res = await getHistorialMensajes(solicitudId, 30, primerMensaje.id);
+
+      // Concatenar mensajes más antiguos al inicio
+      setMensajes((prev) => [...res.mensajes, ...prev]);
+      setHayMas(res.hayMas);
+    } catch (err: any) {
+      console.error("Error al cargar más mensajes:", err);
+    } finally {
+      setCargandoMas(false);
+    }
+  };
+
+  // 4. Enviar mensaje por POST
+  const handleEnviar = async () => {
+    const texto = nuevoTexto.trim();
+    if (!texto || enviando) return;
+
+    try {
+      setEnviando(true);
+      const msgCreado = await enviarMensajeChat(solicitudId, texto);
+
+      // Agregar a la lista si no existe aún
+      setMensajes((prev) => {
+        if (prev.some((m) => m.id === msgCreado.id)) return prev;
+        return [...prev, msgCreado];
+      });
+
+      setNuevoTexto("");
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "No se pudo enviar el mensaje.");
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  if (cargando) {
+    return (
+      <View className="flex-1 justify-center items-center bg-slate-50">
+        <ActivityIndicator size="large" color="#2563EB" />
+        <Text className="mt-3 text-slate-500">Cargando chat...</Text>
+      </View>
+    );
+  }
+
+  const esSoloLectura = chatInfo?.chat?.soloLectura === true;
+
+  return (
+    <KeyboardAvoidingView
+      className="flex-1 bg-slate-100"
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <ChatHeader solicitudId={solicitudId} />
+
+      {/* Lista de Mensajes */}
+      <FlatList
+        ref={flatListRef}
+        data={mensajes}
+        keyExtractor={(item) => item.id}
+        onEndReachedThreshold={0.1}
+        ListHeaderComponent={
+          hayMas ? (
+            <TouchableOpacity
+              onPress={cargarMasMensajes}
+              disabled={cargandoMas}
+              className="py-2 items-center"
+            >
+              {cargandoMas ? (
+                <ActivityIndicator size="small" color="#2563EB" />
+              ) : (
+                <Text className="text-xs text-blue-600 font-semibold">Cargar mensajes anteriores</Text>
+              )}
+            </TouchableOpacity>
+          ) : null
+        }
+        renderItem={({ item }) => {
+          const esMio = item.esMio ?? item.senderId === miUsuarioId;
+          return (
+            <View
+              className={`my-1 mx-3 px-3 py-2 rounded-2xl max-w-[75%] ${
+                esMio
+                  ? "bg-blue-600 self-end rounded-br-xs"
+                  : "bg-white self-start rounded-bl-xs border border-slate-200"
+              }`}
+            >
+              <Text className={`text-sm ${esMio ? "text-white" : "text-slate-800"}`}>
+                {item.contenido}
+              </Text>
+              <Text
+                className={`text-[10px] mt-1 text-right ${
+                  esMio ? "text-blue-200" : "text-slate-400"
+                }`}
+              >
+                {new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </Text>
+            </View>
+          );
+        }}
+        contentContainerStyle={{ paddingVertical: 10 }}
+      />
+
+      {/* Barra de Entrada de Texto o Aviso de Solo Lectura */}
+      {esSoloLectura ? (
+        <View className="bg-amber-50 border-t border-amber-200 p-3 items-center">
+          <Text className="text-amber-800 text-xs font-medium text-center">
+            🔒 El servicio finalizó; el chat es solo de lectura.
+          </Text>
+        </View>
+      ) : (
+        <View className="flex-row items-center px-3 py-2 bg-white border-t border-slate-200">
+          <TextInput
+            value={nuevoTexto}
+            onChangeText={setNuevoTexto}
+            placeholder="Escribe un mensaje..."
+            maxLength={1000}
+            className="flex-1 bg-slate-100 rounded-full px-4 py-2 text-sm text-slate-800 max-h-24"
+            multiline
+          />
+          <TouchableOpacity
+            onPress={handleEnviar}
+            disabled={enviando || nuevoTexto.trim().length === 0}
+            className={`ml-2 px-4 py-2 rounded-full ${
+              enviando || nuevoTexto.trim().length === 0 ? "bg-slate-300" : "bg-blue-600"
+            }`}
+          >
+            <Text className="text-white font-bold text-sm">
+              {enviando ? "..." : "Enviar"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </KeyboardAvoidingView>
+  );
+}
+```
+
+---
+
 ## Indicador de estado (C31)
 
 La pantalla de seguimiento del servicio (`GET /api/requests/:id`) incluye en la respuesta el objeto `estado`, diseñado específicamente para renderizar un indicador de progreso visual por etapas y reflejar la trazabilidad del servicio.

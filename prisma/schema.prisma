@@ -26,6 +26,10 @@ enum RequestStatus {
   CANCELLED
 }
 
+enum MessageType {
+  TEXT
+}
+
 // ── USUARIO Y AUTENTICACIÓN ──
 
 model User {
@@ -43,6 +47,7 @@ model User {
   technician    Technician?    // Si el rol es WORKER
   requests      Request[]      // Solicitudes creadas como cliente
   reviews       Review[]       // Reseñas emitidas como cliente
+  messages      Message[]      // Mensajes enviados en chats
 
   @@map("users")
 }
@@ -157,6 +162,7 @@ model Request {
   client        User               @relation(fields: [clientId], references: [id], onDelete: Cascade)
   technician    Technician         @relation(fields: [technicianId], references: [id], onDelete: Cascade)
   statusLogs    RequestStatusLog[]
+  messages      Message[]
 
   @@map("requests")
 }
@@ -175,4 +181,23 @@ model RequestStatusLog {
 
   @@index([requestId])
   @@map("request_status_logs")
+}
+
+// ── MENSAJES DE CHAT ──
+
+model Message {
+  id          String       @id @default(uuid())
+  requestId   String
+  senderId    String
+  senderRole  Role
+  tipo        MessageType  @default(TEXT)
+  contenido   String
+  createdAt   DateTime     @default(now())
+
+  // Relaciones
+  request     Request      @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  sender      User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, createdAt])
+  @@map("messages")
 }
