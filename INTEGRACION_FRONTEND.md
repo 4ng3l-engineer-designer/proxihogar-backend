@@ -669,6 +669,12 @@ export interface EstadoSolicitud {
   historial: HistorialEstadoItem[];
 }
 
+export interface ChatInfo {
+  disponible: boolean;
+  soloLectura: boolean;
+  motivo: string | null;
+}
+
 export interface SolicitudDetalle {
   id: string;
   status: "PENDING" | "ACCEPTED" | "ON_THE_WAY" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
@@ -680,6 +686,7 @@ export interface SolicitudDetalle {
   updatedAt: string;
   tecnico: TecnicoAsignado;
   estado: EstadoSolicitud;
+  chat: ChatInfo;
 }
 
 export async function getSolicitudPorId(id: string): Promise<SolicitudDetalle> {
@@ -770,6 +777,93 @@ export default function SeguimientoScreen() {
     </View>
   );
 }
+```
+
+---
+
+## Acceso al chat (C36)
+
+Desde la pantalla de seguimiento del servicio (`/seguimiento/[id]`), el usuario dispone de un botón de acceso directo al chat con la contraparte (cliente o técnico).
+
+### 1. Reglas de disponibilidad en la UI
+La respuesta de `GET /api/requests/:id` (así como los listados de solicitudes) incluye el objeto `chat`:
+- `chat.disponible === true`: El botón de chat se muestra **habilitado** para pulsar y navegar a la pantalla de chat (`/chat/[id]`).
+- `chat.disponible === false`: El botón de chat se muestra **deshabilitado** (estilo visual atenuado) y se presenta el texto explicativo de `chat.motivo` (por ejemplo: *"Esperando que el técnico acepte el servicio"* en `PENDING`, o *"El servicio fue cancelado"* en `CANCELLED`).
+- `chat.soloLectura === true`: El chat está disponible para lectura histórica del servicio (`COMPLETED`), pero el input de envío de mensajes en la pantalla de chat debe deshabilitarse.
+
+### 2. Navegación y consulta al abrir el chat
+Al pulsar el botón habilitado, el cliente navega a la pantalla de chat pasando el ID de la solicitud:
+```tsx
+router.push({
+  pathname: "/chat/[id]",
+  params: { id: solicitud.id },
+});
+```
+
+Al cargarse la pantalla de chat (`src/app/chat/[id].tsx`), se debe invocar `GET /api/requests/:id/chat` para validar los permisos y obtener la información de la contraparte:
+
+```typescript
+export interface ContraparteChat {
+  id: string;
+  nombre: string;
+  iniciales: string;
+  colorAvatar: string | null;
+  fotoUrl: string | null;
+  especialidad: string | null;
+  disponible: boolean | null;
+}
+
+export interface ChatAccessData {
+  requestId: string;
+  status: string;
+  chat: ChatInfo;
+  miRol: "CLIENT" | "WORKER";
+  contraparte: ContraparteChat;
+}
+
+export async function getChatAccess(requestId: string): Promise<ChatAccessData> {
+  const token = await getAuthToken();
+  const res = await fetch(`${API_URL}/api/requests/${encodeURIComponent(requestId)}/chat`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => ({}));
+    throw new Error(errorBody.error || `Error ${res.status} al acceder al chat.`);
+  }
+
+  return res.json();
+}
+```
+
+### 3. Ejemplo de botón de chat en la pantalla de seguimiento
+
+```tsx
+<View className="mt-4">
+  <TouchableOpacity
+    disabled={!solicitud.chat.disponible}
+    onPress={() => router.push(`/chat/${solicitud.id}`)}
+    className={`py-3 px-4 rounded-xl flex-row items-center justify-center ${
+      solicitud.chat.disponible ? "bg-blue-600" : "bg-slate-200"
+    }`}
+  >
+    <Text
+      className={`font-bold text-center ${
+        solicitud.chat.disponible ? "text-white" : "text-slate-400"
+      }`}
+    >
+      💬 {solicitud.chat.disponible ? "Abrir chat del servicio" : "Chat no disponible"}
+    </Text>
+  </TouchableOpacity>
+
+  {!solicitud.chat.disponible && solicitud.chat.motivo && (
+    <Text className="text-xs text-slate-400 text-center mt-1">
+      {solicitud.chat.motivo}
+    </Text>
+  )}
+</View>
 ```
 
 ---

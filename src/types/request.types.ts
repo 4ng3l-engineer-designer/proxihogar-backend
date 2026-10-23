@@ -48,6 +48,12 @@ export interface EstadoSolicitudResponse {
   historial: HistorialEstadoItem[];
 }
 
+export interface ChatAccessInfo {
+  disponible: boolean;
+  soloLectura: boolean;
+  motivo: string | null;
+}
+
 export interface RequestResponse {
   id: string;
   status: RequestStatus;
@@ -59,6 +65,7 @@ export interface RequestResponse {
   updatedAt: Date;
   tecnico: TecnicoAsignadoResponse;
   estado: EstadoSolicitudResponse;
+  chat: ChatAccessInfo;
 }
 
 export interface ClienteSolicitudResponse {
@@ -79,4 +86,23 @@ export interface WorkerRequestResponse {
   updatedAt: Date;
   cliente: ClienteSolicitudResponse;
   estado: EstadoSolicitudResponse;
+  chat: ChatAccessInfo;
+}
+
+export interface ContraparteChatResponse {
+  id: string;
+  nombre: string;
+  iniciales: string;
+  colorAvatar: string | null;
+  fotoUrl: string | null;
+  especialidad: string | null;
+  disponible: boolean | null;
+}
+
+export interface ChatAccessResponse {
+  requestId: string;
+  status: RequestStatus;
+  chat: ChatAccessInfo;
+  miRol: "CLIENT" | "WORKER";
+  contraparte: ContraparteChatResponse;
 }

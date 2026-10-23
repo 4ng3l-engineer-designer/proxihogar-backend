@@ -4,6 +4,13 @@ import { Prisma, RequestStatus } from "@prisma/client";
 
 export type RequestWithTechnician = Prisma.RequestGetPayload<{
   include: {
+    client: {
+      select: {
+        id: true;
+        nombre: true;
+        telefono: true;
+      };
+    };
     technician: {
       include: {
         user: {
@@ -25,6 +32,7 @@ export type WorkerRequestWithClient = Prisma.RequestGetPayload<{
   include: {
     client: {
       select: {
+        id: true;
         nombre: true;
         telefono: true;
       };
@@ -67,6 +75,13 @@ export class RequestRepository {
         },
       },
       include: {
+        client: {
+          select: {
+            id: true,
+            nombre: true,
+            telefono: true,
+          },
+        },
         technician: {
           include: {
             user: {
@@ -90,6 +105,13 @@ export class RequestRepository {
       where: { clientId },
       orderBy: { createdAt: "desc" },
       include: {
+        client: {
+          select: {
+            id: true,
+            nombre: true,
+            telefono: true,
+          },
+        },
         technician: {
           include: {
             user: {
@@ -112,6 +134,13 @@ export class RequestRepository {
     return prisma.request.findUnique({
       where: { id },
       include: {
+        client: {
+          select: {
+            id: true,
+            nombre: true,
+            telefono: true,
+          },
+        },
         technician: {
           include: {
             user: {
@@ -150,6 +179,13 @@ export class RequestRepository {
           status: newStatus,
         },
         include: {
+          client: {
+            select: {
+              id: true,
+              nombre: true,
+              telefono: true,
+            },
+          },
           technician: {
             include: {
               user: {
@@ -176,6 +212,7 @@ export class RequestRepository {
       include: {
         client: {
           select: {
+            id: true,
             nombre: true,
             telefono: true,
           },

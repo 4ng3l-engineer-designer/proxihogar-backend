@@ -13,6 +13,11 @@ router.use(authenticate);
 // Rutas exclusivas para CLIENT
 router.post("/", requireRole(Role.CLIENT), requestController.create);
 router.get("/", requireRole(Role.CLIENT), requestController.getAll);
+
+// Acceso al chat (disponible para CLIENT dueño y WORKER asignado)
+router.get("/:id/chat", requestController.getChatAccess);
+
+// Detalle de solicitud (CLIENT)
 router.get("/:id", requireRole(Role.CLIENT), requestController.getById);
 
 // Actualizar estado (disponible tanto para CLIENT dueño como para WORKER asignado)

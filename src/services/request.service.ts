@@ -3,6 +3,8 @@ import { RequestStatus, Role } from "@prisma/client";
 import { RequestRepository, RequestWithTechnician } from "../repositories/request.repository";
 import { TechnicianRepository } from "../repositories/technician.repository";
 import {
+  ChatAccessResponse,
+  ContraparteChatResponse,
   CreateRequestDto,
   EstadoSolicitudResponse,
   HistorialEstadoItem,
@@ -14,6 +16,7 @@ import { HttpError } from "../utils/errors";
 import { calculateHaversineDistance, estimateArrivalTime, formatDistance } from "../utils/haversine";
 import { formatTarifa, MONEDA } from "../utils/currency";
 import { isTransitionAllowed, STATUS_CONFIG, TOTAL_PASOS } from "../utils/requestStatus";
+import { getChatAccess, getInitials } from "../utils/chatAccess";
 
 export class RequestService {
   constructor(
@@ -186,7 +189,68 @@ export class RequestService {
         telefono: r.client.telefono,
       },
       estado: this.buildEstado(r.status, r.createdAt, r.statusLogs),
+      chat: getChatAccess(r.status),
     }));
+  }
+
+  async getChatAccessForRequest(
+    id: string,
+    userId: string,
+    userRole: Role
+  ): Promise<ChatAccessResponse> {
+    const request = await this.requestRepository.findById(id);
+    if (!request) {
+      throw new HttpError(404, "Solicitud no encontrada.");
+    }
+
+    let miRol: "CLIENT" | "WORKER";
+    let contraparte: ContraparteChatResponse;
+
+    if (userRole === Role.CLIENT) {
+      if (request.clientId !== userId) {
+        throw new HttpError(404, "Solicitud no encontrada.");
+      }
+      miRol = "CLIENT";
+      contraparte = {
+        id: request.technician.id,
+        nombre: request.technician.nombre,
+        iniciales: request.technician.iniciales,
+        colorAvatar: request.technician.colorAvatar,
+        fotoUrl: request.technician.fotoUrl ?? null,
+        especialidad: request.technician.especialidad,
+        disponible: request.technician.disponible,
+      };
+    } else if (userRole === Role.WORKER) {
+      const tech = await this.technicianRepository.findByUserId(userId);
+      if (!tech || request.technicianId !== tech.id) {
+        throw new HttpError(404, "Solicitud no encontrada.");
+      }
+      miRol = "WORKER";
+      contraparte = {
+        id: request.client.id,
+        nombre: request.client.nombre,
+        iniciales: getInitials(request.client.nombre),
+        colorAvatar: null,
+        fotoUrl: null,
+        especialidad: null,
+        disponible: null,
+      };
+    } else {
+      throw new HttpError(404, "Solicitud no encontrada.");
+    }
+
+    const chat = getChatAccess(request.status);
+    if (!chat.disponible) {
+      throw new HttpError(403, chat.motivo || "El chat no está disponible para este servicio.");
+    }
+
+    return {
+      requestId: request.id,
+      status: request.status,
+      chat,
+      miRol,
+      contraparte,
+    };
   }
 
   private buildEstado(
@@ -272,6 +336,7 @@ export class RequestService {
       updatedAt: request.updatedAt,
       tecnico,
       estado: this.buildEstado(request.status, request.createdAt, request.statusLogs),
+      chat: getChatAccess(request.status),
     };
   }
 }

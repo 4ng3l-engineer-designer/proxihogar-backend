@@ -257,6 +257,11 @@ Authorization: Bearer <token_worker>
           "fecha": "2026-10-22T16:30:00.000Z"
         }
       ]
+    },
+    "chat": {
+      "disponible": false,
+      "soloLectura": false,
+      "motivo": "Esperando que el técnico acepte el servicio"
     }
   }
 ]
@@ -367,6 +372,11 @@ POST /api/requests
         "fecha": "2026-10-21T05:30:00.000Z"
       }
     ]
+  },
+  "chat": {
+    "disponible": false,
+    "soloLectura": false,
+    "motivo": "Esperando que el técnico acepte el servicio"
   }
 }
 ```
@@ -470,6 +480,76 @@ Endpoint público para consultar la lista de estados configurados en el sistema,
   { "codigo": "CANCELLED", "texto": "Cancelado", "paso": null, "color": "#EF4444" }
 ]
 ```
+
+---
+
+### 4.6 Acceso al chat del servicio (C36)
+```
+GET /api/requests/:id/chat
+```
+
+Valida si el chat está habilitado para la solicitud y entrega los datos de la contraparte para pintar la cabecera e inicializar la conversación.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Reglas de acceso:**
+- Solo pueden acceder el **cliente dueño** de la solicitud o el **técnico asignado** (vinculado al `userId` del token). Cualquier otro usuario recibe `404`.
+- Si el chat **no está disponible** (`PENDING` o `CANCELLED`), responde `403 Forbidden` con el motivo.
+- Si el servicio está `COMPLETED`, el chat está disponible pero en modo `soloLectura: true`.
+
+**Respuesta 200 OK (ejemplo cliente consultando):**
+```json
+{
+  "requestId": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
+  "status": "ACCEPTED",
+  "chat": {
+    "disponible": true,
+    "soloLectura": false,
+    "motivo": null
+  },
+  "miRol": "CLIENT",
+  "contraparte": {
+    "id": "9837e9b0-0093-4ab1-9851-465a7031a941",
+    "nombre": "Juan Rios",
+    "iniciales": "JR",
+    "colorAvatar": "#0B192C",
+    "fotoUrl": null,
+    "especialidad": "Electricista",
+    "disponible": true
+  }
+}
+```
+
+**Respuesta 200 OK (ejemplo técnico consultando):**
+```json
+{
+  "requestId": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
+  "status": "ACCEPTED",
+  "chat": {
+    "disponible": true,
+    "soloLectura": false,
+    "motivo": null
+  },
+  "miRol": "WORKER",
+  "contraparte": {
+    "id": "3339f0ad-83a2-4f82-becb-82225d6a7489",
+    "nombre": "Cliente Ejemplo",
+    "iniciales": "CE",
+    "colorAvatar": null,
+    "fotoUrl": null,
+    "especialidad": null,
+    "disponible": null
+  }
+}
+```
+
+**Errores:**
+- **401 Unauthorized:** Token no proporcionado o expirado.
+- **403 Forbidden:** El chat no está disponible para el estado actual de la solicitud (ej. `{ "error": "Esperando que el técnico acepte el servicio" }` o `{ "error": "El servicio fue cancelado" }`).
+- **404 Not Found:** La solicitud no existe o el usuario autenticado no participa en ella.
 
 ---
 
