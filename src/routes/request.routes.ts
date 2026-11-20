@@ -3,6 +3,7 @@ import { Router } from "express";
 import { Role } from "@prisma/client";
 import { RequestController } from "../controllers/request.controller";
 import { authenticate, requireRole } from "../middlewares/auth.middleware";
+import { uploadChatImage } from "../middlewares/upload.middleware";
 
 const router = Router();
 const requestController = new RequestController();
@@ -19,6 +20,7 @@ router.get("/:id/chat", requestController.getChatAccess);
 
 // Mensajes del chat (disponible para CLIENT dueño y WORKER asignado)
 router.get("/:id/messages", requestController.getMessages);
+router.post("/:id/messages/image", uploadChatImage, requestController.createImageMessage);
 router.post("/:id/messages", requestController.createMessage);
 
 // Ruta en tiempo real hacia el domicilio (solo CLIENT dueño; otros reciben 404)

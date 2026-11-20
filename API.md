@@ -715,7 +715,24 @@ Authorization: Bearer <token>
       "requestId": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
       "tipo": "TEXT",
       "contenido": "Perfecto Juan, te espero en la puerta.",
+      "archivo": null,
       "createdAt": "2026-10-22T20:16:10.000Z",
+      "senderId": "3339f0ad-83a2-4f82-becb-82225d6a7489",
+      "senderRole": "CLIENT",
+      "esMio": true
+    },
+    {
+      "id": "a4d912f1-55ca-41a2-9c31-91f2014ab211",
+      "requestId": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
+      "tipo": "IMAGE",
+      "contenido": "Así está el tablero eléctrico",
+      "archivo": {
+        "url": "https://<proyecto>.supabase.co/storage/v1/object/sign/...",
+        "mime": "image/jpeg",
+        "size": 148290,
+        "expiraEn": "2026-10-22T21:16:30.000Z"
+      },
+      "createdAt": "2026-10-22T20:16:30.000Z",
       "senderId": "3339f0ad-83a2-4f82-becb-82225d6a7489",
       "senderRole": "CLIENT",
       "esMio": true
@@ -724,6 +741,8 @@ Authorization: Bearer <token>
   "hayMas": false
 }
 ```
+
+> **Objeto `archivo` (C41):** Cuando `tipo` es `"TEXT"`, `archivo` es `null`. Cuando `tipo` es `"IMAGE"`, `archivo` contiene `{ url, mime, size, expiraEn }`, donde `url` es un enlace firmado de Supabase Storage válido por **1 hora** y `expiraEn` es la fecha ISO de expiración.
 
 **Errores:**
 - **401 Unauthorized:** Token no proporcionado o expirado.
@@ -769,6 +788,57 @@ Content-Type: application/json
   "esMio": true
 }
 ```
+
+---
+
+### 4.5.1 Enviar imagen en el chat (C41)
+```
+POST /api/requests/:id/messages/image
+```
+
+Disponible para el cliente dueño o el técnico asignado. Recibe `multipart/form-data`, valida los *magic bytes* del archivo en memoria (sin guardar en disco), sube la imagen a Supabase Storage en `requests/<requestId>/<uuid>.<ext>`, guarda el mensaje (`tipo: "IMAGE"`) y lo emite por Socket.io (`chat:message`) con su objeto `archivo`.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+
+**Campos (`FormData`):**
+| Campo | Tipo | Requerido | Descripción |
+| :--- | :--- | :--- | :--- |
+| `imagen` | File | Sí | Imagen JPEG (`FF D8 FF`), PNG (`89 50 4E 47`) o WebP (`RIFF....WEBP`). Máximo **5 MB**. |
+| `contenido` | string | No | Pie de foto opcional (se recortan espacios; máximo 1000 caracteres). |
+
+**Respuesta 201 Created:**
+```json
+{
+  "id": "a4d912f1-55ca-41a2-9c31-91f2014ab211",
+  "requestId": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
+  "tipo": "IMAGE",
+  "contenido": "Así está el tomacorriente",
+  "archivo": {
+    "url": "https://<proyecto>.supabase.co/storage/v1/object/sign/...",
+    "mime": "image/jpeg",
+    "size": 148290,
+    "expiraEn": "2026-11-20T06:45:00.000Z"
+  },
+  "createdAt": "2026-11-20T05:45:00.000Z",
+  "senderId": "3339f0ad-83a2-4f82-becb-82225d6a7489",
+  "senderRole": "CLIENT",
+  "esMio": true
+}
+```
+
+**Errores:**
+- **400 Bad Request:** Falta el archivo en el campo `imagen` o `contenido` supera los 1000 caracteres.
+- **401 Unauthorized:** Token no proporcionado o expirado.
+- **403 Forbidden:** El chat no está disponible (`PENDING`, `CANCELLED` o `EXPIRED`).
+- **404 Not Found:** Solicitud no encontrada o el usuario no es participante.
+- **409 Conflict:** `"El servicio finalizó; el chat es solo de lectura"` (en estado `COMPLETED`).
+- **413 Payload Too Large:** La imagen supera el límite máximo de 5 MB.
+- **415 Unsupported Media Type:** El contenido real del archivo (magic bytes) no corresponde a JPEG, PNG o WebP.
+- **502 Bad Gateway:** Fallo al subir la imagen a Supabase Storage (no se crea el mensaje).
 
 ---
 

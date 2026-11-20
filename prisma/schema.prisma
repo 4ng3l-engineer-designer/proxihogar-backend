@@ -29,6 +29,7 @@ enum RequestStatus {
 
 enum MessageType {
   TEXT
+  IMAGE
 }
 
 // ── USUARIO Y AUTENTICACIÓN ──
@@ -195,7 +196,10 @@ model Message {
   senderId    String
   senderRole  Role
   tipo        MessageType  @default(TEXT)
-  contenido   String
+  contenido   String?
+  archivoPath String?
+  archivoMime String?
+  archivoSize Int?
   createdAt   DateTime     @default(now())
 
   // Relaciones

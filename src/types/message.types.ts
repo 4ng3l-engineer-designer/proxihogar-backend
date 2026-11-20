@@ -1,11 +1,19 @@
 // src/types/message.types.ts
 import { MessageType, Role } from "@prisma/client";
 
+export interface MessageArchivoResponse {
+  url: string;
+  mime: string;
+  size: number;
+  expiraEn: Date;
+}
+
 export interface MessageResponse {
   id: string;
   requestId: string;
   tipo: MessageType;
-  contenido: string;
+  contenido: string | null;
+  archivo: MessageArchivoResponse | null;
   createdAt: Date;
   senderId: string;
   senderRole: Role;
@@ -25,7 +33,8 @@ export interface MessageSocketPayload {
   id: string;
   requestId: string;
   tipo: MessageType;
-  contenido: string;
+  contenido: string | null;
+  archivo: MessageArchivoResponse | null;
   createdAt: Date;
   senderId: string;
   senderRole: Role;

@@ -1,6 +1,7 @@
 // prisma/seed.ts
 import { PrismaClient, Role } from "@prisma/client";
 import bcrypt from "bcrypt";
+import { deleteFromStorage } from "../src/utils/storage";
 
 const prisma = new PrismaClient();
 
@@ -61,6 +62,21 @@ async function main() {
     });
     const seedRequestIds = seedRequests.map((r) => r.id);
     if (seedRequestIds.length > 0) {
+      // Borrar primero archivos en Supabase Storage asociados a los mensajes del seed
+      const seedMediaMessages = await prisma.message.findMany({
+        where: {
+          requestId: { in: seedRequestIds },
+          archivoPath: { not: null },
+        },
+        select: { archivoPath: true },
+      });
+      const storagePaths = seedMediaMessages
+        .map((m) => m.archivoPath)
+        .filter((p): p is string => typeof p === "string" && p.length > 0);
+      if (storagePaths.length > 0 && process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.SUPABASE_BUCKET) {
+        await deleteFromStorage(storagePaths);
+      }
+
       await prisma.message.deleteMany({
         where: { requestId: { in: seedRequestIds } },
       });

@@ -171,6 +171,33 @@ export class RequestController {
     }
   };
 
+  createImageMessage = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+      const requestId = req.params.id;
+      const contenido = req.body?.contenido;
+
+      const result = await this.requestService.createImageMessage(
+        requestId,
+        userId,
+        userRole,
+        req.file,
+        contenido
+      );
+      res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof HttpError) {
+        res.status(error.statusCode).json({ error: error.message });
+        return;
+      }
+      console.error("Error al enviar imagen:", error);
+      res.status(500).json({
+        error: "Ocurrió un error interno al procesar la solicitud.",
+      });
+    }
+  };
+
   getRoute = async (req: Request, res: Response): Promise<void> => {
     try {
       const userId = req.user!.id;

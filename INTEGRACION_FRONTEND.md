@@ -1600,6 +1600,83 @@ const polylineCoords = routeData.ruta.map(([latitude, longitude]) => ({
 
 ---
 
+## Envío de imágenes (C41)
+
+El chat de ProxiHogar soporta envío de imágenes (`JPEG`, `PNG`, `WebP`, hasta **5 MB**) con pie de foto opcional mediante `POST /api/requests/:id/messages/image`.
+
+### 1. Seleccionar y comprimir la imagen con `expo-image-picker`
+
+Para reducir consumo de datos y evitar rechazos por tamaño (`413`), selecciona la imagen con calidad reducida y en formato JPEG:
+
+```typescript
+import * as ImagePicker from "expo-image-picker";
+
+const result = await ImagePicker.launchImageLibraryAsync({
+  mediaTypes: ["images"],
+  allowsEditing: true,
+  quality: 0.7, // Calidad reducida para optimizar peso y subida
+});
+
+if (!result.canceled && result.assets[0]) {
+  const asset = result.assets[0];
+  // Mostrar vista previa en pantalla antes de confirmar el envío
+  setImagenPreview({ uri: asset.uri, mimeType: asset.mimeType || "image/jpeg" });
+}
+```
+
+### 2. Vista previa y envío con `FormData`
+
+Antes de enviar, muestra una tarjeta de **vista previa** con la miniatura, un campo opcional de pie de foto (`contenido`, máx. 1000 caracteres) y botones de *Cancelar* y *Enviar*.
+
+Al confirmar, envía la petición `multipart/form-data` usando el campo **`imagen`** (sin definir manualmente `Content-Type`, para que `fetch` agregue el `boundary` automáticamente):
+
+```typescript
+export async function enviarImagenChat(
+  requestId: string,
+  uri: string,
+  contenido?: string
+): Promise<MensajeChat> {
+  const token = await getAuthToken();
+  const formData = new FormData();
+
+  formData.append("imagen", {
+    uri,
+    name: "foto.jpg",
+    type: "image/jpeg",
+  } as any);
+
+  if (contenido && contenido.trim().length > 0) {
+    formData.append("contenido", contenido.trim());
+  }
+
+  const res = await fetch(
+    `${API_URL}/api/requests/${encodeURIComponent(requestId)}/messages/image`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    }
+  );
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Error ${res.status} al enviar imagen.`);
+  }
+
+  return res.json();
+}
+```
+
+### 3. Renderizado de imágenes y renovación de enlaces firmados (`expiraEn`)
+
+- Los mensajes de texto traen `archivo: null`; los mensajes con `tipo === "IMAGE"` traen `archivo: { url, mime, size, expiraEn }`.
+- Renderiza la imagen en la burbuja con `<Image source={{ uri: item.archivo.url }} />` y, si `item.contenido` no es `null`, muestra el pie de foto debajo.
+- **Vencimiento del enlace (1 hora):** Las URLs firmadas expiran según `archivo.expiraEn`. Si la pantalla estuvo abierta más de 1 hora o `<Image>` dispara `onError` (o `new Date(item.archivo.expiraEn) <= new Date()`), vuelve a consultar `GET /api/requests/:id/messages` para obtener enlaces firmados nuevos.
+
+---
+
 ## Paso 8: Estados de la pantalla
 
 Maneja siempre los 4 estados principales de visualización:

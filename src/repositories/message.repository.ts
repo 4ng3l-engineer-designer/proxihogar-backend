@@ -8,16 +8,22 @@ export class MessageRepository {
     requestId: string;
     senderId: string;
     senderRole: Role;
-    contenido: string;
+    contenido?: string | null;
     tipo?: MessageType;
+    archivoPath?: string | null;
+    archivoMime?: string | null;
+    archivoSize?: number | null;
   }): Promise<Message> {
     return prisma.message.create({
       data: {
         requestId: data.requestId,
         senderId: data.senderId,
         senderRole: data.senderRole,
-        contenido: data.contenido,
+        contenido: data.contenido ?? null,
         tipo: data.tipo ?? MessageType.TEXT,
+        archivoPath: data.archivoPath ?? null,
+        archivoMime: data.archivoMime ?? null,
+        archivoSize: data.archivoSize ?? null,
       },
     });
   }

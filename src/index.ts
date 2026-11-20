@@ -10,9 +10,11 @@ import http from "http";
 import app from "./app";
 import { initSocketServer } from "./realtime/socket";
 import { getRequestExpiryHours, startExpireRequestsJob } from "./jobs/expireRequests";
+import { validateStorageConfig } from "./utils/storage";
 
 let requestExpiryHours: number;
 try {
+  validateStorageConfig();
   requestExpiryHours = getRequestExpiryHours();
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
