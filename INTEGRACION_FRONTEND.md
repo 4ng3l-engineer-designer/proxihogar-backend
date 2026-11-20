@@ -1716,6 +1716,13 @@ Cuando el servicio está en `IN_PROGRESS`, el técnico puede emitir una orden de
 
 ---
 
+## Editar perfil y cambiar contraseña (Punto 13)
+
+- **Editar perfil (`PATCH /api/auth/me`):** Enviar `{ nombre, telefono? }` con token Bearer. El campo `nombre` es obligatorio y no vacío; `telefono` es opcional (puede enviarse vacío o `null`). No se permite modificar `email`, `password` ni `role`.
+- **Cambiar contraseña (`PATCH /api/auth/me/password`):** Enviar `{ currentPassword, newPassword }` con token Bearer. Validar en el formulario que `newPassword` tenga mínimo 8 caracteres y sea distinta de `currentPassword`. Si `currentPassword` no coincide, la API responde `401` (`"Contraseña actual incorrecta"`).
+
+---
+
 ## Paso 8: Estados de la pantalla
 
 Maneja siempre los 4 estados principales de visualización:

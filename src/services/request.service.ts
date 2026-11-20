@@ -126,6 +126,11 @@ export class RequestService {
     }
 
     // 4. Crear la solicitud con status PENDING e inicializar statusLogs
+    const validCategoriaSlug =
+      typeof dto.categoriaSlug === "string" && dto.categoriaSlug.trim() !== ""
+        ? dto.categoriaSlug.trim()
+        : null;
+
     const createdRequest = await this.requestRepository.create({
       clientId,
       technicianId: technician.id,
@@ -133,6 +138,7 @@ export class RequestService {
       tipoProblema: dto.tipoProblema.trim(),
       descripcion: dto.descripcion.trim(),
       radio: dto.radio?.trim() || "5km",
+      categoriaSlug: validCategoriaSlug,
       latitude: validLat,
       longitude: validLng,
     });
@@ -347,6 +353,7 @@ export class RequestService {
       tipoProblema: r.tipoProblema,
       descripcion: r.descripcion,
       radio: r.radio,
+      categoriaSlug: r.categoriaSlug ?? null,
       latitude: r.latitude,
       longitude: r.longitude,
       createdAt: r.createdAt,
@@ -713,6 +720,9 @@ export class RequestService {
       tipoProblema: request.tipoProblema,
       descripcion: request.descripcion,
       radio: request.radio,
+      categoriaSlug: request.categoriaSlug ?? null,
+      latitude: request.latitude,
+      longitude: request.longitude,
       createdAt: request.createdAt,
       updatedAt: request.updatedAt,
       tecnico,

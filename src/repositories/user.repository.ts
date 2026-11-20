@@ -44,6 +44,33 @@ export class UserRepository {
     });
   }
 
+  async updateProfile(
+    id: string,
+    data: { nombre: string; telefono?: string | null }
+  ): Promise<UserProfileResponse> {
+    return prisma.user.update({
+      where: { id },
+      data,
+      select: {
+        id: true,
+        email: true,
+        nombre: true,
+        role: true,
+        dniRuc: true,
+        telefono: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  async updatePassword(id: string, hashedPassword: string): Promise<void> {
+    await prisma.user.update({
+      where: { id },
+      data: { password: hashedPassword },
+    });
+  }
+
   async createWorkerWithTechnician(data: {
     email: string;
     password: string;

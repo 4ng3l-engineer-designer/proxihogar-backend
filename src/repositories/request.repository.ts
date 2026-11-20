@@ -62,6 +62,7 @@ export class RequestRepository {
     tipoProblema: string;
     descripcion: string;
     radio?: string;
+    categoriaSlug?: string | null;
     latitude?: number;
     longitude?: number;
   }): Promise<RequestWithTechnician> {
@@ -73,6 +74,7 @@ export class RequestRepository {
         tipoProblema: data.tipoProblema,
         descripcion: data.descripcion,
         radio: data.radio || "5km",
+        categoriaSlug: data.categoriaSlug ?? null,
         status: RequestStatus.PENDING,
         latitude: data.latitude,
         longitude: data.longitude,

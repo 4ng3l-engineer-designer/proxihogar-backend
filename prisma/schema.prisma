@@ -171,6 +171,7 @@ model Request {
   tipoProblema  String
   descripcion   String
   radio         String         @default("5km")
+  categoriaSlug String?
   status        RequestStatus  @default(PENDING)
   latitude      Float?
   longitude     Float?

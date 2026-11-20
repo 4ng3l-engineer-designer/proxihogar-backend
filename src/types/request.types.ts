@@ -8,6 +8,7 @@ export interface CreateRequestDto {
   tipoProblema: string;
   descripcion: string;
   radio?: string;
+  categoriaSlug?: string;
   latitude?: number;
   longitude?: number;
 }
@@ -73,6 +74,9 @@ export interface RequestResponse {
   tipoProblema: string;
   descripcion: string;
   radio: string;
+  categoriaSlug: string | null;
+  latitude: number | null;
+  longitude: number | null;
   createdAt: Date;
   updatedAt: Date;
   tecnico: TecnicoAsignadoResponse;
@@ -94,6 +98,7 @@ export interface WorkerRequestResponse {
   tipoProblema: string;
   descripcion: string;
   radio: string;
+  categoriaSlug: string | null;
   latitude: number | null;
   longitude: number | null;
   createdAt: Date;

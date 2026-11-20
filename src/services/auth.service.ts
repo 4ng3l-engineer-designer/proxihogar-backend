@@ -5,8 +5,10 @@ import { Role } from "@prisma/client";
 import { UserRepository } from "../repositories/user.repository";
 import {
   AuthResponse,
+  ChangePasswordDto,
   LoginDto,
   RegisterDto,
+  UpdateProfileDto,
   UserProfileResponse,
 } from "../types/auth.types";
 import { HttpError } from "../utils/errors";
@@ -124,6 +126,69 @@ export class AuthService {
       throw new HttpError(404, "Usuario no encontrado.");
     }
     return profile;
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto): Promise<UserProfileResponse> {
+    if (!dto.nombre || typeof dto.nombre !== "string" || dto.nombre.trim() === "") {
+      throw new HttpError(400, "El campo 'nombre' es obligatorio y no puede estar vacío.");
+    }
+
+    const updateData: { nombre: string; telefono?: string | null } = {
+      nombre: dto.nombre.trim(),
+    };
+
+    if (dto.telefono !== undefined) {
+      if (dto.telefono === null) {
+        updateData.telefono = null;
+      } else if (typeof dto.telefono === "string") {
+        const trimmedTel = dto.telefono.trim();
+        updateData.telefono = trimmedTel.length > 0 ? trimmedTel : null;
+      } else {
+        throw new HttpError(400, "El campo 'telefono' debe ser texto o null.");
+      }
+    }
+
+    const existing = await this.userRepository.findById(userId);
+    if (!existing) {
+      throw new HttpError(404, "Usuario no encontrado.");
+    }
+
+    return this.userRepository.updateProfile(userId, updateData);
+  }
+
+  async changePassword(
+    userId: string,
+    dto: ChangePasswordDto
+  ): Promise<{ message: string }> {
+    if (!dto.currentPassword || typeof dto.currentPassword !== "string") {
+      throw new HttpError(400, "El campo 'currentPassword' es obligatorio.");
+    }
+    if (
+      !dto.newPassword ||
+      typeof dto.newPassword !== "string" ||
+      dto.newPassword.length < 8
+    ) {
+      throw new HttpError(400, "La nueva contraseña debe tener al menos 8 caracteres.");
+    }
+
+    const user = await this.userRepository.findById(userId);
+    if (!user) {
+      throw new HttpError(404, "Usuario no encontrado.");
+    }
+
+    const isMatch = await bcrypt.compare(dto.currentPassword, user.password);
+    if (!isMatch) {
+      throw new HttpError(401, "Contraseña actual incorrecta");
+    }
+
+    if (dto.newPassword === dto.currentPassword) {
+      throw new HttpError(400, "La nueva contraseña debe ser diferente a la actual");
+    }
+
+    const hashed = await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS);
+    await this.userRepository.updatePassword(userId, hashed);
+
+    return { message: "Contraseña actualizada correctamente" };
   }
 
   private generateToken(userId: string, role: Role): string {

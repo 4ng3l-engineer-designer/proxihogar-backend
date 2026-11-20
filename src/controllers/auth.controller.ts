@@ -68,4 +68,54 @@ export class AuthController {
       });
     }
   };
+
+  updateMe = async (req: Request, res: Response): Promise<void> => {
+    try {
+      if (!req.user?.id) {
+        res.status(401).json({ error: "No autenticado." });
+        return;
+      }
+
+      const { nombre, telefono } = req.body;
+      const updated = await this.authService.updateProfile(req.user.id, {
+        nombre,
+        telefono,
+      });
+      res.status(200).json(updated);
+    } catch (error) {
+      if (error instanceof HttpError) {
+        res.status(error.statusCode).json({ error: error.message });
+        return;
+      }
+      console.error("Error al actualizar perfil del usuario:", error);
+      res.status(500).json({
+        error: "Ocurrió un error interno al procesar la solicitud.",
+      });
+    }
+  };
+
+  changePassword = async (req: Request, res: Response): Promise<void> => {
+    try {
+      if (!req.user?.id) {
+        res.status(401).json({ error: "No autenticado." });
+        return;
+      }
+
+      const { currentPassword, newPassword } = req.body;
+      const result = await this.authService.changePassword(req.user.id, {
+        currentPassword,
+        newPassword,
+      });
+      res.status(200).json(result);
+    } catch (error) {
+      if (error instanceof HttpError) {
+        res.status(error.statusCode).json({ error: error.message });
+        return;
+      }
+      console.error("Error al cambiar contraseña:", error);
+      res.status(500).json({
+        error: "Ocurrió un error interno al procesar la solicitud.",
+      });
+    }
+  };
 }

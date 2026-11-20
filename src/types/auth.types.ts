@@ -14,6 +14,16 @@ export interface LoginDto {
   password: string;
 }
 
+export interface UpdateProfileDto {
+  nombre: string;
+  telefono?: string | null;
+}
+
+export interface ChangePasswordDto {
+  currentPassword: string;
+  newPassword: string;
+}
+
 export interface AuthUserResponse {
   id: string;
   email: string;

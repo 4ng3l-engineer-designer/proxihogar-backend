@@ -21,5 +21,6 @@ export const DISTRICTS_DATA: DistrictsResponse = {
     { nombre: "San Juan de Miraflores", latitude: -12.1550, longitude: -76.9700 },
     { nombre: "Santiago de Surco", latitude: -12.1453, longitude: -77.0010 },
     { nombre: "Miraflores", latitude: -12.1219, longitude: -77.0297 },
+    { nombre: "Chorrillos", latitude: -12.1716, longitude: -76.9989 },
   ],
 };

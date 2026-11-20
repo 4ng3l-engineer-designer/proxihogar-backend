@@ -106,6 +106,58 @@ Authorization: Bearer <token>
 
 ---
 
+### 0.4 Actualizar perfil del usuario autenticado
+```
+PATCH /api/auth/me
+```
+
+**Headers:**
+```
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Body (JSON):**
+| Campo | Tipo | Requerido | Descripción |
+| :--- | :--- | :--- | :--- |
+| `nombre` | string | Sí | Nombre del usuario (no vacío) |
+| `telefono` | string \| null | No | Número de teléfono (si es vacío, se guarda `null`) |
+
+> No permite modificar `email`, `password` ni `role`.
+
+**Respuesta 200 OK:** Objeto del usuario actualizado (sin `password`, igual que `GET /api/auth/me`).  
+**Errores:** `400 Bad Request` (`nombre` vacío o `telefono` inválido), `401 Unauthorized`, `404 Not Found`.
+
+---
+
+### 0.5 Cambiar contraseña
+```
+PATCH /api/auth/me/password
+```
+
+**Headers:**
+```
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Body (JSON):**
+| Campo | Tipo | Requerido | Descripción |
+| :--- | :--- | :--- | :--- |
+| `currentPassword` | string | Sí | Contraseña actual |
+| `newPassword` | string | Sí | Nueva contraseña (mínimo 8 caracteres y distinta a la actual) |
+
+**Respuesta 200 OK:**
+```json
+{ "message": "Contraseña actualizada correctamente" }
+```
+
+**Errores:**
+- **400 Bad Request:** `newPassword` menor a 8 caracteres o `"La nueva contraseña debe ser diferente a la actual"`.
+- **401 Unauthorized:** `"Contraseña actual incorrecta"` o token inválido.
+
+---
+
 ## 1. Técnicos cercanos (con filtros y radio)
 
 ```
@@ -172,6 +224,12 @@ Campos de cada técnico:
 
 - **400**: falta `lat`/`lng`, no son numéricos, están fuera de rango, o `radius`/`calificacionMin`/`tarifaMax` son inválidos.
 - **500**: error interno.
+
+---
+
+### Verificación de técnicos
+
+El campo `verificado` (`boolean`) indica que el técnico fue validado por el equipo de ProxiHogar (documentación, certificaciones y antecedentes). Actualmente solo se asigna manualmente desde la base de datos o el seed; **no existe un endpoint** para verificar técnicos. Un técnico con `verificado: false` puede recibir solicitudes y trabajar normalmente; la verificación es un sello de confianza adicional.
 
 ---
 
@@ -476,7 +534,8 @@ Endpoint público (sin autenticación). Devuelve la coordenada por defecto de Li
     { "nombre": "Pachacámac", "latitude": -12.2297, "longitude": -76.8567 },
     { "nombre": "San Juan de Miraflores", "latitude": -12.1550, "longitude": -76.9700 },
     { "nombre": "Santiago de Surco", "latitude": -12.1453, "longitude": -77.0010 },
-    { "nombre": "Miraflores", "latitude": -12.1219, "longitude": -77.0297 }
+    { "nombre": "Miraflores", "latitude": -12.1219, "longitude": -77.0297 },
+    { "nombre": "Chorrillos", "latitude": -12.1716, "longitude": -76.9989 }
   ]
 }
 ```
@@ -509,6 +568,7 @@ POST /api/requests
 | `tipoProblema` | string | Sí | Categoría o tipo del problema |
 | `descripcion` | string | Sí | Detalle del problema |
 | `radio` | string | No | Radio de búsqueda / atención (default: `"5km"`) |
+| `categoriaSlug` | string | No | Slug informativo de la categoría (ej. `"electricidad"`) |
 | `latitude` | number | No | Latitud de la solicitud (-90 a 90). Obligatorio si se envía `longitude`. |
 | `longitude` | number | No | Longitud de la solicitud (-180 a 180). Obligatorio si se envía `latitude`. |
 
@@ -521,6 +581,9 @@ POST /api/requests
   "tipoProblema": "Fuga de agua",
   "descripcion": "El caño de la cocina gotea continuamente",
   "radio": "5km",
+  "categoriaSlug": "electricidad",
+  "latitude": -12.1219,
+  "longitude": -77.0297,
   "createdAt": "2026-10-21T05:30:00.000Z",
   "updatedAt": "2026-10-21T05:30:00.000Z",
   "tecnico": {

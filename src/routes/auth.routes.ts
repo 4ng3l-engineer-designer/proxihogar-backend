@@ -21,5 +21,7 @@ const authController = new AuthController();
 router.post("/register", authLimiter, authController.register);
 router.post("/login", authLimiter, authController.login);
 router.get("/me", authenticate, authController.getMe);
+router.patch("/me", authenticate, authController.updateMe);
+router.patch("/me/password", authenticate, authController.changePassword);
 
 export default router;
