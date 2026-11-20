@@ -1,6 +1,6 @@
 # Guía de integración: consumir la API desde la app
 
-**Base URL:** `https://proxihogar-backend-production.up.railway.app`  
+**Base URL:** `https://proxihogar-backend.onrender.com`  
 **Referencia de endpoints:** Ver [API.md](./API.md)
 
 ---
@@ -11,12 +11,12 @@ Flujo de datos de la arquitectura:
 
 ```text
 ┌───────────────────────┐         Petición HTTP         ┌────────────────────────┐         SQL / Prisma         ┌──────────────────────┐
-│  App Móvil (Expo RN)  │ ────────────────────────────> │   Railway (Backend)    │ ───────────────────────────> │  Supabase (Postgres) │
+│  App Móvil (Expo RN)  │ ────────────────────────────> │   Render (Backend)     │ ───────────────────────────> │  Supabase (Postgres) │
 │                       │ <──────────────────────────── │                        │ <─────────────────────────── │                      │
 └───────────────────────┘          JSON Response        └────────────────────────┘          Query Data          └──────────────────────┘
 ```
 
-Actualmente, la app lee datos estáticos directamente desde `src/data/tecnicos.ts` y `src/data/categorias.ts`. Integrar la API consiste en reemplazar la lectura de esos archivos mock por peticiones HTTP asíncronas a los endpoints correspondientes de Railway.
+Actualmente, la app lee datos estáticos directamente desde `src/data/tecnicos.ts` y `src/data/categorias.ts`. Integrar la API consiste en reemplazar la lectura de esos archivos mock por peticiones HTTP asíncronas a los endpoints correspondientes del backend en Render.
 
 ---
 
@@ -26,7 +26,7 @@ Crea el archivo `src/constants/api.ts` en el proyecto del frontend:
 
 ```typescript
 // src/constants/api.ts
-export const API_URL = "https://proxihogar-backend-production.up.railway.app";
+export const API_URL = "https://proxihogar-backend.onrender.com";
 ```
 
 ---
@@ -1000,11 +1000,19 @@ La funcionalidad de chat de texto en tiempo real (`HU C37`) permite a los partic
 import { API_URL } from "../constants/api";
 import { getAuthToken } from "./authStorage";
 
+export interface MensajeArchivo {
+  url: string;
+  mime: string;
+  size: number;
+  expiraEn: string; // ISO Date string
+}
+
 export interface MensajeChat {
   id: string;
   requestId: string;
-  tipo: "TEXT";
-  contenido: string;
+  tipo: "TEXT" | "IMAGE";
+  contenido: string | null;
+  archivo: MensajeArchivo | null;
   createdAt: string; // ISO Date string
   senderId: string;
   senderRole: "CLIENT" | "WORKER";
@@ -1692,10 +1700,10 @@ Maneja siempre los 4 estados principales de visualización:
 
 ## Paso 9: Probar desde el celular o emulador
 
-- **Acceso público:** La URL de Railway (`https://proxihogar-backend-production.up.railway.app`) es pública en Internet. No necesitas configurar `localhost` ni la IP de tu red local en Expo Go.
+- **Acceso público:** La URL de Render (`https://proxihogar-backend.onrender.com`) es pública en Internet. No necesitas configurar `localhost` ni la IP de tu red local en Expo Go.
 - **Verificación rápida:** Abre el endpoint en el navegador antes de probar en el móvil:
   ```text
-  https://proxihogar-backend-production.up.railway.app/api/technicians/nearby?lat=-12.2745&lng=-76.8711&radius=15
+  https://proxihogar-backend.onrender.com/api/technicians/nearby?lat=-12.2745&lng=-76.8711&radius=15
   ```
 - **Cold start:** La primera petición puede demorar entre 3 y 8 segundos si la instancia estuvo inactiva.
 - **Error 500:** Si el backend responde 500 de forma persistente, consulta con el equipo de backend (puede que Supabase haya pausado el proyecto por inactividad gratuita).
@@ -1706,7 +1714,7 @@ Maneja siempre los 4 estados principales de visualización:
 
 Marca cada punto al completar la integración:
 
-- [ ] La lista de técnicos cercanos se descarga desde la API de Railway en vez del mock local.
+- [ ] La lista de técnicos cercanos se descarga desde la API de Render en vez del mock local.
 - [ ] La distancia (`distanceKm`) y el badge de verificado se muestran correctamente en las tarjetas.
 - [ ] Al presionar un técnico, se abre su pantalla de perfil con el `id` real.
 - [ ] La pantalla de perfil carga la información y reseñas desde `/api/technicians/:id`.
@@ -1722,7 +1730,7 @@ Marca cada punto al completar la integración:
 
 1. **`Network request failed`:**
    - Verifica la conexión a Internet del emulador o dispositivo móvil.
-   - Confirma que `API_URL` apunte a `https://proxihogar-backend-production.up.railway.app` y use `https://`.
+   - Confirma que `API_URL` apunte a `https://proxihogar-backend.onrender.com` y use `https://`.
 2. **Lista siempre vacía (`[]`):**
    - Comprueba que `lat` y `lng` sean números flotantes válidos dentro de Lima.
    - En la base de datos de prueba actual existen **8 técnicos configurados** en Lima (Lurín, Villa El Salvador, Villa María del Triunfo, Pachacámac, San Juan de Miraflores, Santiago de Surco y Miraflores), 7 disponibles y 1 no disponible. Asegúrate de usar un radio suficiente (ej. 10 km o 15 km) desde tus coordenadas si estás alejado.

@@ -1,9 +1,9 @@
 # API ProxiHogar
 
-**Base URL (producción):** `https://proxihogar-backend-production.up.railway.app`
+**Base URL (producción):** `https://proxihogar-backend.onrender.com`
 
 - Autenticación: Mediante JWT en el header `Authorization: Bearer <token>` para rutas protegidas.
-- Rutas públicas por ahora: `/api/technicians/nearby` y `/api/technicians/:id` (se consumen sin token).
+- Rutas públicas: `/api/technicians/nearby`, `/api/technicians/:id`, `/api/districts`, `/api/request-statuses`, `/api/auth/register` y `/api/auth/login` (se consumen sin token).
 - Rate Limit: Endpoints de autenticación (`/register` y `/login`) limitados a **20 intentos fallidos** cada 15 minutos por IP (`skipSuccessfulRequests: true`). Las peticiones exitosas no descuentan intentos.
 - Expiración automática: Las solicitudes en estado `PENDING` expiran automáticamente tras `REQUEST_EXPIRY_HOURS` horas (por defecto `24`).
 - CORS abierto y protección de cabeceras con Helmet.
@@ -322,6 +322,9 @@ Protegido con `authenticate` y `requireRole("WORKER")`. Permite al técnico comp
 
 **Errores:**
 - **400 Bad Request:** Algún campo incumple las validaciones o `latitude`/`longitude` no vienen juntos.
+- **401 Unauthorized:** Token no proporcionado o inválido.
+- **403 Forbidden:** El usuario no posee el rol `WORKER`.
+- **404 Not Found:** Perfil de técnico no encontrado.
 - **409 Conflict:** Intenta dejar `especialidad` en `"Sin especificar"` o `descripcion` vacía mientras el técnico tiene `disponible: true`.
 
 ---
@@ -344,6 +347,9 @@ Protegido con `authenticate` y `requireRole("WORKER")`.
 
 **Errores:**
 - **400 Bad Request:** `disponible` no es booleano.
+- **401 Unauthorized:** Token no proporcionado o inválido.
+- **403 Forbidden:** El usuario no posee el rol `WORKER`.
+- **404 Not Found:** Perfil de técnico no encontrado.
 - **409 Conflict:** `"Debes completar tu especialidad y descripción antes de activarte como disponible."`
 
 ---
@@ -415,7 +421,10 @@ Endpoint público (sin autenticación). Devuelve la coordenada por defecto de Li
 
 ## 4. Solicitudes de servicio (C33 - Seguimiento)
 
-Todas las rutas bajo `/api/requests` están protegidas y requieren autenticación con token Bearer y rol `CLIENT`. El `clientId` se toma automáticamente del token JWT del usuario autenticado.
+Todas las rutas bajo `/api/requests` requieren autenticación con token Bearer (`authenticate`).
+- Creación, listado, detalle y ruta (`POST /api/requests`, `GET /api/requests`, `GET /api/requests/:id`, `GET /api/requests/:id/route`): exclusivos del cliente dueño (`CLIENT`).
+- Cambio de estado, acceso al chat y mensajes (`PATCH /api/requests/:id/status`, `GET /api/requests/:id/chat`, `GET/POST /api/requests/:id/messages`, `POST /api/requests/:id/messages/image`): disponibles tanto para el cliente dueño (`CLIENT`) como para el técnico asignado (`WORKER`).
+- El `clientId` o `userId` se toma siempre del token JWT del usuario autenticado.
 
 Header requerido:
 ```
@@ -616,7 +625,7 @@ Authorization: Bearer <token>
 
 **Reglas de acceso:**
 - Solo pueden acceder el **cliente dueño** de la solicitud o el **técnico asignado** (vinculado al `userId` del token). Cualquier otro usuario recibe `404`.
-- Si el chat **no está disponible** (`PENDING` o `CANCELLED`), responde `403 Forbidden` con el motivo.
+- Si el chat **no está disponible** (`PENDING`, `CANCELLED` o `EXPIRED`), responde `403 Forbidden` con el motivo.
 - Si el servicio está `COMPLETED`, el chat está disponible pero en modo `soloLectura: true`.
 
 **Respuesta 200 OK (ejemplo cliente consultando):**
@@ -672,12 +681,12 @@ Authorization: Bearer <token>
 
 ---
 
-### 4.4 Obtener historial de mensajes del chat
+### 4.7 Obtener historial de mensajes del chat
 ```
 GET /api/requests/:id/messages
 ```
 
-Disponible para el **cliente dueño** o el **técnico asignado**. Permite consultar el historial de mensajes de texto con paginación cursor-based hacia atrás (`before`).
+Disponible para el **cliente dueño** o el **técnico asignado**. Permite consultar el historial de mensajes (texto e imágenes) con paginación cursor-based hacia atrás (`before`).
 
 **Headers:**
 ```
@@ -692,7 +701,7 @@ Authorization: Bearer <token>
 
 **Reglas de acceso:**
 - **404 Not Found:** La solicitud no existe o el usuario no es participante.
-- **403 Forbidden:** El chat no está disponible en el estado actual (`PENDING` o `CANCELLED`).
+- **403 Forbidden:** El chat no está disponible en el estado actual (`PENDING`, `CANCELLED` o `EXPIRED`).
 - En estado `COMPLETED` el chat es de solo lectura, por lo que **sí permite leer los mensajes** (200 OK).
 - Los mensajes se devuelven ordenados **cronológicamente del más antiguo al más reciente**.
 
@@ -751,7 +760,7 @@ Authorization: Bearer <token>
 
 ---
 
-### 4.5 Enviar mensaje de chat
+### 4.8 Enviar mensaje de chat
 ```
 POST /api/requests/:id/messages
 ```
@@ -772,7 +781,7 @@ Content-Type: application/json
 **Reglas de negocio:**
 - Si `contenido` no se envía, no es texto, está vacío o supera los 1000 caracteres: **400 Bad Request**.
 - Si el usuario no es participante o la solicitud no existe: **404 Not Found**.
-- Si el chat no está disponible (`PENDING` o `CANCELLED`): **403 Forbidden** con el motivo.
+- Si el chat no está disponible (`PENDING`, `CANCELLED` o `EXPIRED`): **403 Forbidden** con el motivo.
 - Si el servicio finalizó (`COMPLETED` / `chat.soloLectura === true`): **409 Conflict** con `"El servicio finalizó; el chat es solo de lectura"`.
 
 **Respuesta 201 Created:**
@@ -782,6 +791,7 @@ Content-Type: application/json
   "requestId": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
   "tipo": "TEXT",
   "contenido": "Ya estoy afuera del domicilio.",
+  "archivo": null,
   "createdAt": "2026-10-22T20:18:00.000Z",
   "senderId": "9837e9b0-0093-4ab1-9851-465a7031a941",
   "senderRole": "WORKER",
@@ -791,7 +801,7 @@ Content-Type: application/json
 
 ---
 
-### 4.5.1 Enviar imagen en el chat (C41)
+### 4.9 Enviar imagen en el chat (C41)
 ```
 POST /api/requests/:id/messages/image
 ```
@@ -842,16 +852,16 @@ Content-Type: multipart/form-data
 
 ---
 
-### 4.6 Tiempo Real con Socket.io (C37)
+### 4.10 Tiempo Real con Socket.io (C37)
 
-El servidor cuenta con Socket.io montado sobre el mismo puerto HTTP con soporte CORS habilitado. El envío de mensajes se realiza siempre por REST (`POST /api/requests/:id/messages`); el socket se utiliza exclusivamente para recibir eventos en tiempo real.
+El servidor cuenta con Socket.io montado sobre el mismo puerto HTTP con soporte CORS habilitado. El envío de mensajes se realiza siempre por REST (`POST /api/requests/:id/messages` o `POST /api/requests/:id/messages/image`); el socket se utiliza exclusivamente para recibir eventos en tiempo real.
 
 #### Conexión y autenticación
 El cliente debe enviar el token JWT en el objeto `auth` del handshake:
 ```javascript
 import { io } from "socket.io-client";
 
-const socket = io("https://proxihogar-backend-production.up.railway.app", {
+const socket = io("https://proxihogar-backend.onrender.com", {
   auth: {
     token: "<JWT_DEL_USUARIO>",
   },
@@ -875,13 +885,14 @@ const socket = io("https://proxihogar-backend-production.up.railway.app", {
 #### Eventos emitidos por el servidor hacia la sala `request:<requestId>`
 
 1. **`chat:message`** (Nuevo mensaje enviado):
-   Se emite automáticamente tras guardar un mensaje exitosamente vía `POST /api/requests/:id/messages`.
+   Se emite automáticamente tras guardar un mensaje exitosamente vía `POST /api/requests/:id/messages` (con `archivo: null`) o `POST /api/requests/:id/messages/image` (con `archivo: { url, mime, size, expiraEn }`).
    ```json
    {
      "id": "8c59f201-9031-41ae-ba5a-19e0cf558fa3",
      "requestId": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
      "tipo": "TEXT",
      "contenido": "Ya estoy afuera del domicilio.",
+     "archivo": null,
      "createdAt": "2026-10-22T20:18:00.000Z",
      "senderId": "9837e9b0-0093-4ab1-9851-465a7031a941",
      "senderRole": "WORKER"
@@ -924,7 +935,7 @@ const socket = io("https://proxihogar-backend-production.up.railway.app", {
 
 ---
 
-### 4.7 Ruta hacia el domicilio en tiempo real (C30)
+### 4.11 Ruta hacia el domicilio en tiempo real (C30)
 ```
 GET /api/requests/:id/route
 ```
@@ -985,7 +996,7 @@ Calcula la ruta vehicular desde la última posición registrada del técnico has
 ## 5. Ejemplo de consumo (TypeScript)
 
 ```typescript
-const API_URL = "https://proxihogar-backend-production.up.railway.app";
+const API_URL = "https://proxihogar-backend.onrender.com";
 
 export interface Resena {
   id: string;
