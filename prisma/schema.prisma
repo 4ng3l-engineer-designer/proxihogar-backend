@@ -175,11 +175,13 @@ model Request {
 // ── HISTORIAL DE ESTADOS DE SOLICITUD ──
 
 model RequestStatusLog {
-  id         String        @id @default(uuid())
-  requestId  String
-  status     RequestStatus
-  changedBy  String        // userId
-  createdAt  DateTime      @default(now())
+  id            String        @id @default(uuid())
+  requestId     String
+  status        RequestStatus
+  changedBy     String        // userId o "system"
+  changedByRole Role?
+  motivo        String?
+  createdAt     DateTime      @default(now())
 
   // Relaciones
   request    Request       @relation(fields: [requestId], references: [id], onDelete: Cascade)

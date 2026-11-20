@@ -1,5 +1,6 @@
 // src/utils/requestStatus.ts
 import { RequestStatus, Role } from "@prisma/client";
+import { ActorRole, CancelacionInfo, EstadoSolicitudResponse, HistorialEstadoItem } from "../types/request.types";
 
 export interface StatusMeta {
   codigo: RequestStatus;
@@ -122,4 +123,81 @@ export function getAllStatusList(): StatusMeta[] {
     STATUS_CONFIG[RequestStatus.CANCELLED],
     STATUS_CONFIG[RequestStatus.EXPIRED],
   ];
+}
+
+export function resolveLogActor(
+  log: { changedBy: string; changedByRole?: Role | null },
+  clientId?: string | null,
+  technicianUserId?: string | null
+): ActorRole {
+  if (log.changedByRole === Role.CLIENT) return "CLIENT";
+  if (log.changedByRole === Role.WORKER) return "WORKER";
+  if (log.changedBy === "system") return "SYSTEM";
+  if (clientId && log.changedBy === clientId) return "CLIENT";
+  if (technicianUserId && log.changedBy === technicianUserId) return "WORKER";
+  return "SYSTEM";
+}
+
+export function buildEstadoResponse(params: {
+  status: RequestStatus;
+  createdAt: Date;
+  clientId?: string | null;
+  technicianUserId?: string | null;
+  statusLogs?: Array<{
+    status: RequestStatus;
+    changedBy: string;
+    changedByRole?: Role | null;
+    motivo?: string | null;
+    createdAt: Date;
+  }>;
+}): EstadoSolicitudResponse {
+  const { status, createdAt, clientId, technicianUserId, statusLogs } = params;
+  const meta = STATUS_CONFIG[status];
+
+  let historial: HistorialEstadoItem[] = [];
+  if (statusLogs && statusLogs.length > 0) {
+    historial = statusLogs.map((log) => {
+      const item: HistorialEstadoItem = {
+        codigo: log.status,
+        texto: STATUS_CONFIG[log.status]?.texto ?? log.status,
+        fecha: log.createdAt,
+        por: resolveLogActor(log, clientId, technicianUserId),
+      };
+      if (log.motivo) {
+        item.motivo = log.motivo;
+      }
+      return item;
+    });
+  } else {
+    historial = [
+      {
+        codigo: status,
+        texto: meta.texto,
+        fecha: createdAt,
+        por: status === RequestStatus.EXPIRED ? "SYSTEM" : "CLIENT",
+      },
+    ];
+  }
+
+  let cancelacion: CancelacionInfo | null = null;
+  if (status === RequestStatus.CANCELLED || status === RequestStatus.EXPIRED) {
+    // Último log correspondiente al estado actual
+    const matchingLogs = historial.filter((h) => h.codigo === status);
+    const lastLog = matchingLogs[matchingLogs.length - 1] ?? historial[historial.length - 1];
+    cancelacion = {
+      por: lastLog ? lastLog.por : "SYSTEM",
+      motivo: lastLog?.motivo ?? null,
+      fecha: lastLog ? lastLog.fecha : createdAt,
+    };
+  }
+
+  return {
+    codigo: status,
+    texto: meta.texto,
+    paso: meta.paso,
+    totalPasos: TOTAL_PASOS,
+    color: meta.color,
+    cancelacion,
+    historial,
+  };
 }

@@ -618,6 +618,7 @@ Content-Type: application/json
 | Campo | Tipo | Requerido | Descripción |
 | :--- | :--- | :--- | :--- |
 | `status` | string | Sí | Nuevo estado (`PENDING`, `ACCEPTED`, `ON_THE_WAY`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`) |
+| `motivo` | string | No | Motivo opcional de cancelación (máximo 200 caracteres). Solo se guarda cuando `status` es `CANCELLED`; en otros estados se ignora. Si viene vacío, se guarda `null`. |
 
 **Matriz de transiciones permitidas:**
 - **WORKER asignado:**
@@ -635,10 +636,21 @@ Content-Type: application/json
 Cuando la transición es a `ACCEPTED`, el servidor verifica dentro de una transacción (bloqueando la fila del técnico) que no tenga otra solicitud en estado `ACCEPTED`, `ON_THE_WAY` o `IN_PROGRESS`. Si ya tiene una, responde `409 Conflict` con `"Ya tienes un servicio en curso. Finalízalo antes de aceptar otro."`. Esta restricción aplica únicamente al aceptar, no al crear solicitudes.
 
 **Respuesta 200 OK:**
-Objeto de la solicitud con el nuevo `status`, el objeto `estado` actualizado (incorporando el nuevo log en `historial`), `chat`, `tecnico` y el objeto `cliente` (`{ nombre, telefono }`). Todo el cambio se ejecuta atómicamente en una transacción con bloqueo de fila (`FOR UPDATE`).
+Objeto de la solicitud con el nuevo `status`, el objeto `estado` actualizado, `chat`, `tecnico` y `cliente` (`{ nombre, telefono }`). Todo el cambio se ejecuta atómicamente en una transacción con bloqueo de fila (`FOR UPDATE`).
+
+- Dentro de `estado`:
+  - `cancelacion`: `null` cuando el estado no es `CANCELLED` ni `EXPIRED`. Cuando el estado actual es `CANCELLED` o `EXPIRED`, contiene:
+    ```json
+    {
+      "por": "CLIENT" | "WORKER" | "SYSTEM",
+      "motivo": "string | null",
+      "fecha": "2026-11-20T06:50:00.000Z"
+    }
+    ```
+  - Cada elemento de `estado.historial` incluye `codigo`, `texto`, `fecha`, `por` (`"CLIENT"`, `"WORKER"` o `"SYSTEM"`) y `motivo` (solo si existe). El motivo es visible únicamente para los participantes de la solicitud (cliente dueño y técnico asignado).
 
 **Errores:**
-- **400 Bad Request:** Estado no enviado o valor no reconocido en `RequestStatus`.
+- **400 Bad Request:** Estado no enviado/no reconocido en `RequestStatus`, o `motivo` no es texto / supera los 200 caracteres.
 - **401 Unauthorized:** Token no proporcionado o inválido.
 - **404 Not Found:** Solicitud no encontrada o no pertenece al usuario autenticado (si es cliente, no es el dueño; si es técnico, no es el técnico asignado).
 - **409 Conflict:** Transición no permitida (ej. `"No se puede pasar de PENDING a COMPLETED."`) o técnico ocupado (`"Ya tienes un servicio en curso. Finalízalo antes de aceptar otro."`).

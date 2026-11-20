@@ -1370,17 +1370,26 @@ La pantalla de seguimiento del servicio (`GET /api/requests/:id`) incluye en la 
 
 ```typescript
 export interface HistorialEstadoItem {
-  codigo: "PENDING" | "ACCEPTED" | "ON_THE_WAY" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+  codigo: "PENDING" | "ACCEPTED" | "ON_THE_WAY" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "EXPIRED";
   texto: string;
+  fecha: string; // ISO string
+  por: "CLIENT" | "WORKER" | "SYSTEM";
+  motivo?: string;
+}
+
+export interface CancelacionInfo {
+  por: "CLIENT" | "WORKER" | "SYSTEM";
+  motivo: string | null;
   fecha: string; // ISO string
 }
 
 export interface EstadoSolicitud {
-  codigo: "PENDING" | "ACCEPTED" | "ON_THE_WAY" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+  codigo: "PENDING" | "ACCEPTED" | "ON_THE_WAY" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "EXPIRED";
   texto: string;             // Etiqueta legible (ej. "Técnico en camino")
-  paso: number | null;       // Paso actual (1 a 5) o null si fue cancelado
+  paso: number | null;       // Paso actual (1 a 5) o null si fue cancelado/expirado
   totalPasos: number;        // Total de pasos del flujo normal (5)
   color: string;             // Color sugerido en formato hex (ej. "#8B5CF6")
+  cancelacion: CancelacionInfo | null;
   historial: HistorialEstadoItem[]; // Logs ordenados cronológicamente
 }
 ```
@@ -1392,9 +1401,14 @@ export interface EstadoSolicitud {
    - Si `estado.paso` es 1, el servicio está en *Pendiente de aceptación*; si es 2, *Aceptado*; si es 3, *Técnico en camino*; si es 4, *Servicio en progreso*; si es 5, *Finalizado*.
 2. **Etiqueta principal:**
    - Muestra directamente `estado.texto` en la cabecera del indicador con el color sugerido en `estado.color`.
-3. **Caso especial: Cancelación (`CANCELLED`):**
-   - Cuando el estado es `"CANCELLED"`, `estado.paso` es `null`.
-   - No muestres la barra de progreso estándar del 1 al 5; en su lugar, renderiza una tarjeta o banner destacado con fondo rojo suave (`#FEE2E2`), texto *"Servicio Cancelado"* y la fecha del historial en que se canceló.
+3. **Caso especial: Cancelación (`CANCELLED`) y Expiración (`EXPIRED`):**
+   - Cuando el estado es `"CANCELLED"` o `"EXPIRED"`, `estado.paso` es `null`.
+   - No muestres la barra de progreso estándar del 1 al 5; en su lugar, renderiza una tarjeta o banner destacado con el detalle de `estado.cancelacion`:
+     - Según `estado.cancelacion.por` (en la vista del cliente):
+       - `"WORKER"` → mostrar *"Cancelado por el técnico"*.
+       - `"CLIENT"` → mostrar *"Cancelado por ti"* (en la vista del técnico: *"Cancelado por el cliente"*).
+       - `"SYSTEM"` → mostrar *"Expirado automáticamente por falta de respuesta"*.
+     - Si `estado.cancelacion.motivo` no es `null`, muéstralo debajo como detalle (ej. *"Motivo: ..."*).
 4. **Refresco automático y reconexión:**
    - Como el estado del servicio cambia a medida que el técnico interactúa con su aplicación, la pantalla de seguimiento del cliente debe refrescar la información periódicamente:
      - **Polling periódico:** Configurar un `setInterval` cada **15 segundos** mientras la pantalla permanezca montada.

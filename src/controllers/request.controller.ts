@@ -61,12 +61,13 @@ export class RequestController {
     try {
       const userId = req.user!.id;
       const userRole = req.user!.role;
-      const { status } = req.body;
+      const { status, motivo } = req.body;
       const result = await this.requestService.updateStatus(
         req.params.id,
         status,
         userId,
-        userRole
+        userRole,
+        motivo
       );
       res.status(200).json(result);
     } catch (error) {

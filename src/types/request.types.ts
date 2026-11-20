@@ -33,9 +33,19 @@ export interface TecnicoAsignadoResponse {
   calculoAproximado?: boolean;
 }
 
+export type ActorRole = "CLIENT" | "WORKER" | "SYSTEM";
+
 export interface HistorialEstadoItem {
   codigo: RequestStatus;
   texto: string;
+  fecha: Date;
+  por: ActorRole;
+  motivo?: string;
+}
+
+export interface CancelacionInfo {
+  por: ActorRole;
+  motivo: string | null;
   fecha: Date;
 }
 
@@ -45,6 +55,7 @@ export interface EstadoSolicitudResponse {
   paso: number | null;
   totalPasos: number;
   color: string;
+  cancelacion: CancelacionInfo | null;
   historial: HistorialEstadoItem[];
 }
 

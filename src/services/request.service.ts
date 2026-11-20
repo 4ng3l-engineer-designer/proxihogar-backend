@@ -23,7 +23,7 @@ import {
 import { HttpError } from "../utils/errors";
 import { calculateHaversineDistance, estimateArrivalTime, formatDistance } from "../utils/haversine";
 import { formatTarifa, MONEDA } from "../utils/currency";
-import { STATUS_CONFIG, TOTAL_PASOS } from "../utils/requestStatus";
+import { buildEstadoResponse } from "../utils/requestStatus";
 import { getChatAccess, getInitials } from "../utils/chatAccess";
 import { emitChatMessage, emitRequestStatus } from "../realtime/socket";
 import { routingService } from "./routing.service";
@@ -159,7 +159,8 @@ export class RequestService {
     id: string,
     newStatusInput: unknown,
     userId: string,
-    userRole: Role
+    userRole: Role,
+    motivoInput?: unknown
   ): Promise<RequestResponse> {
     // 1. Validar que el nuevo status sea válido
     if (
@@ -171,6 +172,23 @@ export class RequestService {
     }
 
     const nextStatus = newStatusInput as RequestStatus;
+
+    // 2. Validar motivo solo cuando el nuevo estado es CANCELLED (en otros estados se ignora)
+    let validMotivo: string | null = null;
+    if (
+      nextStatus === RequestStatus.CANCELLED &&
+      motivoInput !== undefined &&
+      motivoInput !== null
+    ) {
+      if (typeof motivoInput !== "string") {
+        throw new HttpError(400, "El campo 'motivo' debe ser texto.");
+      }
+      const trimmed = motivoInput.trim();
+      if (trimmed.length > 200) {
+        throw new HttpError(400, "El campo 'motivo' no puede superar los 200 caracteres.");
+      }
+      validMotivo = trimmed.length > 0 ? trimmed : null;
+    }
 
     let assignedTechId: string | undefined;
     if (userRole === Role.WORKER) {
@@ -190,6 +208,7 @@ export class RequestService {
       userId,
       userRole,
       technicianId: assignedTechId,
+      motivo: validMotivo,
     });
 
     const mappedResponse = this.mapToResponse(updated);
@@ -335,7 +354,13 @@ export class RequestService {
         nombre: r.client.nombre,
         telefono: r.client.telefono,
       },
-      estado: this.buildEstado(r.status, r.createdAt, r.statusLogs),
+      estado: buildEstadoResponse({
+        status: r.status,
+        createdAt: r.createdAt,
+        clientId: r.client.id,
+        technicianUserId: r.technician.userId,
+        statusLogs: r.statusLogs,
+      }),
       chat: getChatAccess(r.status),
     };
   }
@@ -639,42 +664,6 @@ export class RequestService {
     return request;
   }
 
-  private buildEstado(
-    status: RequestStatus,
-    createdAt: Date,
-    statusLogs?: { status: RequestStatus; createdAt: Date }[]
-  ): EstadoSolicitudResponse {
-    const meta = STATUS_CONFIG[status];
-    let historial: HistorialEstadoItem[] = [];
-
-    if (statusLogs && statusLogs.length > 0) {
-      historial = statusLogs.map((log) => ({
-        codigo: log.status,
-        texto: STATUS_CONFIG[log.status]?.texto ?? log.status,
-        fecha: log.createdAt,
-      }));
-    } else {
-      // Si no tiene registros en request_status_logs (creadas antes de la migración),
-      // devolver al menos un elemento con su status actual y la fecha createdAt
-      historial = [
-        {
-          codigo: status,
-          texto: meta.texto,
-          fecha: createdAt,
-        },
-      ];
-    }
-
-    return {
-      codigo: status,
-      texto: meta.texto,
-      paso: meta.paso,
-      totalPasos: TOTAL_PASOS,
-      color: meta.color,
-      historial,
-    };
-  }
-
   private mapToResponse(request: RequestWithTechnician): RequestResponse {
     const tech = request.technician;
 
@@ -721,7 +710,13 @@ export class RequestService {
       createdAt: request.createdAt,
       updatedAt: request.updatedAt,
       tecnico,
-      estado: this.buildEstado(request.status, request.createdAt, request.statusLogs),
+      estado: buildEstadoResponse({
+        status: request.status,
+        createdAt: request.createdAt,
+        clientId: request.clientId,
+        technicianUserId: tech.userId,
+        statusLogs: request.statusLogs,
+      }),
       chat: getChatAccess(request.status),
     };
   }

@@ -39,6 +39,11 @@ export type WorkerRequestWithClient = Prisma.RequestGetPayload<{
         telefono: true;
       };
     };
+    technician: {
+      select: {
+        userId: true;
+      };
+    };
     statusLogs: {
       orderBy: {
         createdAt: "asc";
@@ -73,6 +78,7 @@ export class RequestRepository {
           create: {
             status: RequestStatus.PENDING,
             changedBy: data.clientId,
+            changedByRole: Role.CLIENT,
           },
         },
       },
@@ -173,8 +179,9 @@ export class RequestRepository {
     userId: string;
     userRole: Role;
     technicianId?: string;
+    motivo?: string | null;
   }): Promise<{ previousStatus: RequestStatus; updated: RequestWithTechnician }> {
-    const { id, nextStatus, userId, userRole, technicianId } = params;
+    const { id, nextStatus, userId, userRole, technicianId, motivo } = params;
 
     return prisma.$transaction(async (tx) => {
       // Si el técnico está aceptando, bloquear su fila primero para serializar aceptaciones simultáneas
@@ -238,6 +245,8 @@ export class RequestRepository {
           requestId: id,
           status: nextStatus,
           changedBy: userId,
+          changedByRole: userRole,
+          motivo: nextStatus === RequestStatus.CANCELLED ? (motivo ?? null) : null,
         },
       });
 
@@ -286,8 +295,16 @@ export class RequestRepository {
     Array<{
       id: string;
       status: RequestStatus;
+      clientId: string;
       createdAt: Date;
-      statusLogs: Array<{ status: RequestStatus; createdAt: Date }>;
+      technician: { userId: string };
+      statusLogs: Array<{
+        status: RequestStatus;
+        changedBy: string;
+        changedByRole: Role | null;
+        motivo: string | null;
+        createdAt: Date;
+      }>;
     }>
   > {
     const candidates = await prisma.request.findMany({
@@ -303,8 +320,16 @@ export class RequestRepository {
     const expiredList: Array<{
       id: string;
       status: RequestStatus;
+      clientId: string;
       createdAt: Date;
-      statusLogs: Array<{ status: RequestStatus; createdAt: Date }>;
+      technician: { userId: string };
+      statusLogs: Array<{
+        status: RequestStatus;
+        changedBy: string;
+        changedByRole: Role | null;
+        motivo: string | null;
+        createdAt: Date;
+      }>;
     }> = [];
 
     for (const candidate of candidates) {
@@ -327,6 +352,8 @@ export class RequestRepository {
             requestId: candidate.id,
             status: RequestStatus.EXPIRED,
             changedBy: "system",
+            changedByRole: null,
+            motivo: null,
           },
         });
 
@@ -338,11 +365,20 @@ export class RequestRepository {
           select: {
             id: true,
             status: true,
+            clientId: true,
             createdAt: true,
+            technician: {
+              select: {
+                userId: true,
+              },
+            },
             statusLogs: {
               orderBy: { createdAt: "asc" },
               select: {
                 status: true,
+                changedBy: true,
+                changedByRole: true,
+                motivo: true,
                 createdAt: true,
               },
             },
@@ -384,6 +420,11 @@ export class RequestRepository {
             telefono: true,
           },
         },
+        technician: {
+          select: {
+            userId: true,
+          },
+        },
         statusLogs: {
           orderBy: {
             createdAt: "asc",
@@ -403,6 +444,11 @@ export class RequestRepository {
             id: true,
             nombre: true,
             telefono: true,
+          },
+        },
+        technician: {
+          select: {
+            userId: true,
           },
         },
         statusLogs: {

@@ -1,7 +1,7 @@
 // src/jobs/expireRequests.ts
 import { RequestStatus } from "@prisma/client";
 import { RequestRepository } from "../repositories/request.repository";
-import { STATUS_CONFIG, TOTAL_PASOS, isSystemTransitionAllowed } from "../utils/requestStatus";
+import { buildEstadoResponse, isSystemTransitionAllowed } from "../utils/requestStatus";
 import { getChatAccess } from "../utils/chatAccess";
 import { emitRequestStatus } from "../realtime/socket";
 
@@ -43,33 +43,16 @@ export async function expirePendingRequests(
   const cutoff = new Date(Date.now() - expiryHours * 60 * 60 * 1000);
   const expiredRequests = await requestRepository.expirePendingRequestsBefore(cutoff);
 
-  const meta = STATUS_CONFIG[RequestStatus.EXPIRED];
   const chat = getChatAccess(RequestStatus.EXPIRED);
 
   for (const req of expiredRequests) {
-    const historial =
-      req.statusLogs.length > 0
-        ? req.statusLogs.map((log) => ({
-            codigo: log.status,
-            texto: STATUS_CONFIG[log.status]?.texto ?? log.status,
-            fecha: log.createdAt,
-          }))
-        : [
-            {
-              codigo: req.status,
-              texto: meta.texto,
-              fecha: req.createdAt,
-            },
-          ];
-
-    const estado = {
-      codigo: req.status,
-      texto: meta.texto,
-      paso: meta.paso,
-      totalPasos: TOTAL_PASOS,
-      color: meta.color,
-      historial,
-    };
+    const estado = buildEstadoResponse({
+      status: req.status,
+      createdAt: req.createdAt,
+      clientId: req.clientId,
+      technicianUserId: req.technician.userId,
+      statusLogs: req.statusLogs,
+    });
 
     emitRequestStatus(req.id, {
       requestId: req.id,
