@@ -12,6 +12,13 @@ const requestController = new RequestController();
 // Rutas del perfil propio del técnico (protegidas para WORKER)
 // Deben ir antes de /:id para evitar colisión de ruta
 router.get(
+  "/me/requests/:id",
+  authenticate,
+  requireRole(Role.WORKER),
+  requestController.getWorkerRequestById
+);
+
+router.get(
   "/me/requests",
   authenticate,
   requireRole(Role.WORKER),

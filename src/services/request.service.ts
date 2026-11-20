@@ -23,7 +23,7 @@ import {
 import { HttpError } from "../utils/errors";
 import { calculateHaversineDistance, estimateArrivalTime, formatDistance } from "../utils/haversine";
 import { formatTarifa, MONEDA } from "../utils/currency";
-import { isTransitionAllowed, STATUS_CONFIG, TOTAL_PASOS } from "../utils/requestStatus";
+import { STATUS_CONFIG, TOTAL_PASOS } from "../utils/requestStatus";
 import { getChatAccess, getInitials } from "../utils/chatAccess";
 import { emitChatMessage, emitRequestStatus } from "../realtime/socket";
 import { routingService } from "./routing.service";
@@ -172,60 +172,38 @@ export class RequestService {
 
     const nextStatus = newStatusInput as RequestStatus;
 
-    // 2. Buscar la solicitud existente
-    const request = await this.requestRepository.findById(id);
-    if (!request) {
-      throw new HttpError(404, "Solicitud no encontrada.");
-    }
-
-    // 3. Validar permisos y transiciones según rol
-    let assignedTechId: string | null = null;
-
-    if (userRole === Role.CLIENT) {
-      // Solo el dueño puede modificar
-      if (request.clientId !== userId) {
-        throw new HttpError(404, "Solicitud no encontrada.");
-      }
-
-      if (!isTransitionAllowed(Role.CLIENT, request.status, nextStatus)) {
-        throw new HttpError(
-          409,
-          `No se puede pasar de ${request.status} a ${nextStatus}.`
-        );
-      }
-    } else if (userRole === Role.WORKER) {
-      // Buscar técnico asignado por userId
+    let assignedTechId: string | undefined;
+    if (userRole === Role.WORKER) {
       const tech = await this.technicianRepository.findByUserId(userId);
-      if (!tech || request.technicianId !== tech.id) {
+      if (!tech) {
         throw new HttpError(404, "Solicitud no encontrada.");
-      }
-
-      if (!isTransitionAllowed(Role.WORKER, request.status, nextStatus)) {
-        throw new HttpError(
-          409,
-          `No se puede pasar de ${request.status} a ${nextStatus}.`
-        );
       }
       assignedTechId = tech.id;
-    } else {
+    } else if (userRole !== Role.CLIENT) {
       throw new HttpError(403, "Rol no autorizado para cambiar el estado.");
     }
 
-    // 4. Guardar cambio y registrar log
-    // Si el técnico acepta la solicitud, verificar ocupación y actualizar dentro de la misma transacción
-    const updatedRequest =
-      userRole === Role.WORKER && nextStatus === RequestStatus.ACCEPTED && assignedTechId
-        ? await this.requestRepository.acceptRequestIfAvailable(id, assignedTechId, userId)
-        : await this.requestRepository.updateStatus(id, nextStatus, userId);
+    // Ejecutar lectura con bloqueo FOR UPDATE, validación y guardado atómicamente en transacción
+    const { previousStatus, updated } = await this.requestRepository.transitionStatus({
+      id,
+      nextStatus,
+      userId,
+      userRole,
+      technicianId: assignedTechId,
+    });
 
-    const mappedResponse = this.mapToResponse(updatedRequest);
+    const mappedResponse = this.mapToResponse(updated);
+    mappedResponse.cliente = {
+      nombre: updated.client.nombre,
+      telefono: updated.client.telefono,
+    };
 
-    // 5. Si la solicitud salió de ON_THE_WAY, limpiar la caché de ruta
-    if (request.status === RequestStatus.ON_THE_WAY && nextStatus !== RequestStatus.ON_THE_WAY) {
+    // Si la solicitud salió de ON_THE_WAY, limpiar la caché de ruta
+    if (previousStatus === RequestStatus.ON_THE_WAY && nextStatus !== RequestStatus.ON_THE_WAY) {
       routingService.clearRouteCache(id);
     }
 
-    // 6. Emitir cambio de estado a la sala de Socket.io
+    // Emitir cambio de estado a la sala de Socket.io
     emitRequestStatus(id, {
       requestId: mappedResponse.id,
       status: mappedResponse.status,
@@ -324,8 +302,25 @@ export class RequestService {
     }
 
     const requests = await this.requestRepository.findByTechnicianId(tech.id);
+    return requests.map((r) => this.mapWorkerRequest(r));
+  }
 
-    return requests.map((r) => ({
+  async getWorkerRequestById(requestId: string, userId: string): Promise<WorkerRequestResponse> {
+    const tech = await this.technicianRepository.findByUserId(userId);
+    if (!tech) {
+      throw new HttpError(404, "Solicitud no encontrada.");
+    }
+
+    const request = await this.requestRepository.findByIdForTechnician(requestId, tech.id);
+    if (!request) {
+      throw new HttpError(404, "Solicitud no encontrada.");
+    }
+
+    return this.mapWorkerRequest(request);
+  }
+
+  private mapWorkerRequest(r: import("../repositories/request.repository").WorkerRequestWithClient): WorkerRequestResponse {
+    return {
       id: r.id,
       status: r.status,
       direccion: r.direccion,
@@ -342,7 +337,7 @@ export class RequestService {
       },
       estado: this.buildEstado(r.status, r.createdAt, r.statusLogs),
       chat: getChatAccess(r.status),
-    }));
+    };
   }
 
   async getChatAccessForRequest(

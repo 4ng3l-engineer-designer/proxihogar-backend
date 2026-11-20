@@ -275,6 +275,64 @@ Authorization: Bearer <token_worker>
 
 ---
 
+### 2.3.1 Detalle de una solicitud asignada al técnico autenticado
+```
+GET /api/technicians/me/requests/:id
+```
+
+Protegido con `authenticate` y `requireRole("WORKER")`. Devuelve el detalle de una solicitud específica asignada al técnico autenticado (buscado por el `userId` del token), incluyendo los datos básicos del cliente (`nombre`, `telefono` — sin `email` ni `password`), `estado` completo con `historial` y `chat`. No incluye datos del perfil del técnico ni de otros técnicos.
+
+**Headers:**
+```
+Authorization: Bearer <token_worker>
+```
+
+**Respuesta 200 OK:**
+```json
+{
+  "id": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
+  "status": "PENDING",
+  "direccion": "Av. Larco 123, Miraflores",
+  "tipoProblema": "Cortocircuito en sala",
+  "descripcion": "Saltan los plomos continuamente.",
+  "radio": "5km",
+  "latitude": -12.1219,
+  "longitude": -77.0297,
+  "createdAt": "2026-10-22T16:30:00.000Z",
+  "updatedAt": "2026-10-22T16:30:00.000Z",
+  "cliente": {
+    "nombre": "Cliente Ejemplo",
+    "telefono": "987111222"
+  },
+  "estado": {
+    "codigo": "PENDING",
+    "texto": "Pendiente de aceptación",
+    "paso": 1,
+    "totalPasos": 5,
+    "color": "#EAB308",
+    "historial": [
+      {
+        "codigo": "PENDING",
+        "texto": "Pendiente de aceptación",
+        "fecha": "2026-10-22T16:30:00.000Z"
+      }
+    ]
+  },
+  "chat": {
+    "disponible": false,
+    "soloLectura": false,
+    "motivo": "Esperando que el técnico acepte el servicio"
+  }
+}
+```
+
+**Errores:**
+- **401 Unauthorized:** Token no proporcionado o inválido.
+- **403 Forbidden:** El usuario no posee el rol `WORKER`.
+- **404 Not Found:** `{ "error": "Solicitud no encontrada." }` (si la solicitud no existe o pertenece a otro técnico).
+
+---
+
 ### 2.4 Perfil propio del técnico autenticado
 ```
 GET /api/technicians/me
@@ -577,7 +635,7 @@ Content-Type: application/json
 Cuando la transición es a `ACCEPTED`, el servidor verifica dentro de una transacción (bloqueando la fila del técnico) que no tenga otra solicitud en estado `ACCEPTED`, `ON_THE_WAY` o `IN_PROGRESS`. Si ya tiene una, responde `409 Conflict` con `"Ya tienes un servicio en curso. Finalízalo antes de aceptar otro."`. Esta restricción aplica únicamente al aceptar, no al crear solicitudes.
 
 **Respuesta 200 OK:**
-Objeto de la solicitud con el nuevo `status` y el objeto `estado` actualizado (incorporando el nuevo log en `historial`).
+Objeto de la solicitud con el nuevo `status`, el objeto `estado` actualizado (incorporando el nuevo log en `historial`), `chat`, `tecnico` y el objeto `cliente` (`{ nombre, telefono }`). Todo el cambio se ejecuta atómicamente en una transacción con bloqueo de fila (`FOR UPDATE`).
 
 **Errores:**
 - **400 Bad Request:** Estado no enviado o valor no reconocido en `RequestStatus`.

@@ -1,7 +1,8 @@
 // src/repositories/request.repository.ts
 import { prisma } from "../utils/prisma";
-import { Prisma, RequestStatus } from "@prisma/client";
+import { Prisma, RequestStatus, Role } from "@prisma/client";
 import { HttpError } from "../utils/errors";
+import { isSystemTransitionAllowed, isTransitionAllowed } from "../utils/requestStatus";
 
 export type RequestWithTechnician = Prisma.RequestGetPayload<{
   include: {
@@ -160,117 +161,90 @@ export class RequestRepository {
     });
   }
 
-  async updateStatus(
-    id: string,
-    newStatus: RequestStatus,
-    changedBy: string
-  ): Promise<RequestWithTechnician> {
-    return prisma.$transaction(async (tx) => {
-      await tx.requestStatusLog.create({
-        data: {
-          requestId: id,
-          status: newStatus,
-          changedBy,
-        },
-      });
-
-      return tx.request.update({
-        where: { id },
-        data: {
-          status: newStatus,
-        },
-        include: {
-          client: {
-            select: {
-              id: true,
-              nombre: true,
-              telefono: true,
-            },
-          },
-          technician: {
-            include: {
-              user: {
-                select: {
-                  telefono: true,
-                },
-              },
-            },
-          },
-          statusLogs: {
-            orderBy: {
-              createdAt: "asc",
-            },
-          },
-        },
-      });
-    });
-  }
-
   /**
-   * Acepta una solicitud de forma atómica verificando dentro de la misma transacción
-   * que el técnico no tenga ya otro servicio en curso (ACCEPTED, ON_THE_WAY o IN_PROGRESS).
+   * Ejecuta un cambio de estado atómico dentro de una transacción:
+   * - Bloquea la fila del técnico (si aplica aceptación) y la de la solicitud con FOR UPDATE.
+   * - Valida pertenencia, transición permitida (requestStatus.ts) y ocupación en aceptación.
+   * - Actualiza la solicitud y crea el RequestStatusLog en la misma transacción.
    */
-  async acceptRequestIfAvailable(
-    id: string,
-    technicianId: string,
-    changedBy: string
-  ): Promise<RequestWithTechnician> {
+  async transitionStatus(params: {
+    id: string;
+    nextStatus: RequestStatus;
+    userId: string;
+    userRole: Role;
+    technicianId?: string;
+  }): Promise<{ previousStatus: RequestStatus; updated: RequestWithTechnician }> {
+    const { id, nextStatus, userId, userRole, technicianId } = params;
+
     return prisma.$transaction(async (tx) => {
-      // Bloquear fila del técnico para serializar aceptaciones simultáneas
-      await tx.$queryRaw`SELECT id FROM "technicians" WHERE id = ${technicianId} FOR UPDATE`;
+      // Si el técnico está aceptando, bloquear su fila primero para serializar aceptaciones simultáneas
+      if (userRole === Role.WORKER && nextStatus === RequestStatus.ACCEPTED && technicianId) {
+        await tx.$queryRaw`SELECT id FROM "technicians" WHERE id = ${technicianId} FOR UPDATE`;
+      }
 
-      // Verificar que la solicitud siga en PENDING y asignada a este técnico
-      const current = await tx.request.findUnique({
-        where: { id },
-        select: { id: true, status: true, technicianId: true },
-      });
+      // Leer la solicitud con bloqueo de fila FOR UPDATE
+      const rows = await tx.$queryRaw<
+        Array<{ id: string; status: RequestStatus; clientId: string; technicianId: string }>
+      >`SELECT id, status, "clientId", "technicianId" FROM "requests" WHERE id = ${id} FOR UPDATE`;
 
-      if (!current || current.technicianId !== technicianId) {
+      const current = rows[0];
+      if (!current) {
         throw new HttpError(404, "Solicitud no encontrada.");
       }
 
-      if (current.status !== RequestStatus.PENDING) {
+      // Validar pertenencia según rol
+      if (userRole === Role.CLIENT && current.clientId !== userId) {
+        throw new HttpError(404, "Solicitud no encontrada.");
+      }
+      if (userRole === Role.WORKER && current.technicianId !== technicianId) {
+        throw new HttpError(404, "Solicitud no encontrada.");
+      }
+
+      // Validar transición permitida con la tabla de requestStatus.ts
+      if (!isTransitionAllowed(userRole, current.status, nextStatus)) {
         throw new HttpError(
           409,
-          `No se puede pasar de ${current.status} a ${RequestStatus.ACCEPTED}.`
+          `No se puede pasar de ${current.status} a ${nextStatus}.`
         );
       }
 
-      // Verificar si el técnico ya tiene otra solicitud activa
-      const activeRequest = await tx.request.findFirst({
-        where: {
-          technicianId,
-          id: { not: id },
-          status: {
-            in: [
-              RequestStatus.ACCEPTED,
-              RequestStatus.ON_THE_WAY,
-              RequestStatus.IN_PROGRESS,
-            ],
+      // En aceptación, verificar que el técnico no tenga otra solicitud en curso
+      if (userRole === Role.WORKER && nextStatus === RequestStatus.ACCEPTED && technicianId) {
+        const activeRequest = await tx.request.findFirst({
+          where: {
+            technicianId,
+            id: { not: id },
+            status: {
+              in: [
+                RequestStatus.ACCEPTED,
+                RequestStatus.ON_THE_WAY,
+                RequestStatus.IN_PROGRESS,
+              ],
+            },
           },
-        },
-        select: { id: true },
-      });
+          select: { id: true },
+        });
 
-      if (activeRequest) {
-        throw new HttpError(
-          409,
-          "Ya tienes un servicio en curso. Finalízalo antes de aceptar otro."
-        );
+        if (activeRequest) {
+          throw new HttpError(
+            409,
+            "Ya tienes un servicio en curso. Finalízalo antes de aceptar otro."
+          );
+        }
       }
 
       await tx.requestStatusLog.create({
         data: {
           requestId: id,
-          status: RequestStatus.ACCEPTED,
-          changedBy,
+          status: nextStatus,
+          changedBy: userId,
         },
       });
 
-      return tx.request.update({
+      const updated = await tx.request.update({
         where: { id },
         data: {
-          status: RequestStatus.ACCEPTED,
+          status: nextStatus,
         },
         include: {
           client: {
@@ -296,12 +270,17 @@ export class RequestRepository {
           },
         },
       });
+
+      return {
+        previousStatus: current.status,
+        updated,
+      };
     });
   }
 
   /**
    * Pasa a EXPIRED todas las solicitudes en estado PENDING creadas antes de cutoff,
-   * registrando un RequestStatusLog con changedBy = "system" por cada una.
+   * leyendo con FOR UPDATE, validando con requestStatus.ts y registrando el log en la misma transacción.
    */
   async expirePendingRequestsBefore(cutoff: Date): Promise<
     Array<{
@@ -330,17 +309,16 @@ export class RequestRepository {
 
     for (const candidate of candidates) {
       const updated = await prisma.$transaction(async (tx) => {
-        const res = await tx.request.updateMany({
-          where: {
-            id: candidate.id,
-            status: RequestStatus.PENDING,
-          },
-          data: {
-            status: RequestStatus.EXPIRED,
-          },
-        });
+        const rows = await tx.$queryRaw<
+          Array<{ id: string; status: RequestStatus; createdAt: Date }>
+        >`SELECT id, status, "createdAt" FROM "requests" WHERE id = ${candidate.id} FOR UPDATE`;
 
-        if (res.count === 0) {
+        const current = rows[0];
+        if (!current || current.createdAt >= cutoff) {
+          return null;
+        }
+
+        if (!isSystemTransitionAllowed(current.status, RequestStatus.EXPIRED)) {
           return null;
         }
 
@@ -352,8 +330,11 @@ export class RequestRepository {
           },
         });
 
-        return tx.request.findUnique({
+        return tx.request.update({
           where: { id: candidate.id },
+          data: {
+            status: RequestStatus.EXPIRED,
+          },
           select: {
             id: true,
             status: true,
@@ -385,6 +366,29 @@ export class RequestRepository {
       },
       select: {
         id: true,
+      },
+    });
+  }
+
+  async findByIdForTechnician(
+    id: string,
+    technicianId: string
+  ): Promise<WorkerRequestWithClient | null> {
+    return prisma.request.findFirst({
+      where: { id, technicianId },
+      include: {
+        client: {
+          select: {
+            id: true,
+            nombre: true,
+            telefono: true,
+          },
+        },
+        statusLogs: {
+          orderBy: {
+            createdAt: "asc",
+          },
+        },
       },
     });
   }

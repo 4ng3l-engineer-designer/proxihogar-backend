@@ -64,6 +64,7 @@ export interface RequestResponse {
   createdAt: Date;
   updatedAt: Date;
   tecnico: TecnicoAsignadoResponse;
+  cliente?: ClienteSolicitudResponse;
   estado: EstadoSolicitudResponse;
   chat: ChatAccessInfo;
 }
