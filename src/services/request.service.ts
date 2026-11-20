@@ -135,6 +135,8 @@ export class RequestService {
     }
 
     // 3. Validar permisos y transiciones según rol
+    let assignedTechId: string | null = null;
+
     if (userRole === Role.CLIENT) {
       // Solo el dueño puede modificar
       if (request.clientId !== userId) {
@@ -160,12 +162,18 @@ export class RequestService {
           `No se puede pasar de ${request.status} a ${nextStatus}.`
         );
       }
+      assignedTechId = tech.id;
     } else {
       throw new HttpError(403, "Rol no autorizado para cambiar el estado.");
     }
 
     // 4. Guardar cambio y registrar log
-    const updatedRequest = await this.requestRepository.updateStatus(id, nextStatus, userId);
+    // Si el técnico acepta la solicitud, verificar ocupación y actualizar dentro de la misma transacción
+    const updatedRequest =
+      userRole === Role.WORKER && nextStatus === RequestStatus.ACCEPTED && assignedTechId
+        ? await this.requestRepository.acceptRequestIfAvailable(id, assignedTechId, userId)
+        : await this.requestRepository.updateStatus(id, nextStatus, userId);
+
     const mappedResponse = this.mapToResponse(updatedRequest);
 
     // 5. Emitir cambio de estado a la sala de Socket.io

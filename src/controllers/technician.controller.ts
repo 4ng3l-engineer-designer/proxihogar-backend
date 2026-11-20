@@ -1,6 +1,7 @@
 // src/controllers/technician.controller.ts
 import { Request, Response } from "express";
 import { TechnicianService } from "../services/technician.service";
+import { HttpError } from "../utils/errors";
 
 export class TechnicianController {
   constructor(private readonly technicianService = new TechnicianService()) {}
@@ -163,6 +164,80 @@ export class TechnicianController {
       res.status(200).json(technician);
     } catch (error) {
       console.error(`Error al obtener perfil del técnico (${req.params.id}):`, error);
+      res.status(500).json({
+        error: "Ocurrió un error interno al procesar la solicitud.",
+      });
+    }
+  };
+
+  getMe = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user!.id;
+      const profile = await this.technicianService.getMyProfile(userId);
+      res.status(200).json(profile);
+    } catch (error) {
+      if (error instanceof HttpError) {
+        res.status(error.statusCode).json({ error: error.message });
+        return;
+      }
+      console.error("Error al obtener el perfil del técnico autenticado:", error);
+      res.status(500).json({
+        error: "Ocurrió un error interno al procesar la solicitud.",
+      });
+    }
+  };
+
+  updateMe = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user!.id;
+      const {
+        especialidad,
+        descripcion,
+        tarifaBase,
+        ubicacion,
+        experienciaAnios,
+        latitude,
+        longitude,
+        fotoUrl,
+      } = req.body;
+
+      const updated = await this.technicianService.updateMyProfile(userId, {
+        especialidad,
+        descripcion,
+        tarifaBase,
+        ubicacion,
+        experienciaAnios,
+        latitude,
+        longitude,
+        fotoUrl,
+      });
+
+      res.status(200).json(updated);
+    } catch (error) {
+      if (error instanceof HttpError) {
+        res.status(error.statusCode).json({ error: error.message });
+        return;
+      }
+      console.error("Error al actualizar el perfil del técnico:", error);
+      res.status(500).json({
+        error: "Ocurrió un error interno al procesar la solicitud.",
+      });
+    }
+  };
+
+  updateDisponibilidad = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user!.id;
+      const { disponible } = req.body;
+
+      const updated = await this.technicianService.updateMyDisponibilidad(userId, disponible);
+      res.status(200).json(updated);
+    } catch (error) {
+      if (error instanceof HttpError) {
+        res.status(error.statusCode).json({ error: error.message });
+        return;
+      }
+      console.error("Error al actualizar disponibilidad del técnico:", error);
       res.status(500).json({
         error: "Ocurrió un error interno al procesar la solicitud.",
       });

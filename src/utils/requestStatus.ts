@@ -47,6 +47,12 @@ export const STATUS_CONFIG: Record<RequestStatus, StatusMeta> = {
     paso: null,
     color: "#EF4444", // Rojo
   },
+  [RequestStatus.EXPIRED]: {
+    codigo: RequestStatus.EXPIRED,
+    texto: "Expirado",
+    paso: null,
+    color: "#6B7280", // Gris
+  },
 };
 
 /**
@@ -63,6 +69,7 @@ export const WORKER_ALLOWED_TRANSITIONS: Record<RequestStatus, RequestStatus[]> 
   [RequestStatus.IN_PROGRESS]: [RequestStatus.COMPLETED],
   [RequestStatus.COMPLETED]: [],
   [RequestStatus.CANCELLED]: [],
+  [RequestStatus.EXPIRED]: [],
 };
 
 /**
@@ -77,11 +84,31 @@ export const CLIENT_ALLOWED_TRANSITIONS: Record<RequestStatus, RequestStatus[]> 
   [RequestStatus.IN_PROGRESS]: [],
   [RequestStatus.COMPLETED]: [],
   [RequestStatus.CANCELLED]: [],
+  [RequestStatus.EXPIRED]: [],
+};
+
+/**
+ * Transiciones permitidas para el sistema (jobs automáticos):
+ * PENDING -> EXPIRED
+ */
+export const SYSTEM_ALLOWED_TRANSITIONS: Record<RequestStatus, RequestStatus[]> = {
+  [RequestStatus.PENDING]: [RequestStatus.EXPIRED],
+  [RequestStatus.ACCEPTED]: [],
+  [RequestStatus.ON_THE_WAY]: [],
+  [RequestStatus.IN_PROGRESS]: [],
+  [RequestStatus.COMPLETED]: [],
+  [RequestStatus.CANCELLED]: [],
+  [RequestStatus.EXPIRED]: [],
 };
 
 export function isTransitionAllowed(role: Role, currentStatus: RequestStatus, nextStatus: RequestStatus): boolean {
   const transitions = role === Role.WORKER ? WORKER_ALLOWED_TRANSITIONS : CLIENT_ALLOWED_TRANSITIONS;
   const allowed = transitions[currentStatus] || [];
+  return allowed.includes(nextStatus);
+}
+
+export function isSystemTransitionAllowed(currentStatus: RequestStatus, nextStatus: RequestStatus): boolean {
+  const allowed = SYSTEM_ALLOWED_TRANSITIONS[currentStatus] || [];
   return allowed.includes(nextStatus);
 }
 
@@ -93,5 +120,6 @@ export function getAllStatusList(): StatusMeta[] {
     STATUS_CONFIG[RequestStatus.IN_PROGRESS],
     STATUS_CONFIG[RequestStatus.COMPLETED],
     STATUS_CONFIG[RequestStatus.CANCELLED],
+    STATUS_CONFIG[RequestStatus.EXPIRED],
   ];
 }

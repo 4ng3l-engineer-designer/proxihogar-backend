@@ -1531,6 +1531,33 @@ export function IndicadorEstado({ solicitudId }: { solicitudId: string }) {
 
 ---
 
+## Registro y activación del perfil técnico (WORKER)
+
+Cuando un usuario se registra con `role: "WORKER"` en `POST /api/auth/register`, el backend crea automáticamente su perfil en la tabla `technicians` en la misma transacción con valores iniciales:
+- `especialidad: "Sin especificar"`
+- `descripcion: ""`
+- `disponible: false`
+- `verificado: false`
+- `tarifaBase: null`, `ubicacion: "Lima, Perú"`, `latitude: -12.0464`, `longitude: -77.0428`, `experienciaAnios: 0`.
+
+### Flujo obligatorio antes de activarse como disponible
+
+1. **Consultar el perfil propio (`GET /api/technicians/me`):**
+   - Al iniciar sesión como `WORKER`, llamar a `GET /api/technicians/me` con el token Bearer.
+   - Si `especialidad === "Sin especificar"` o `descripcion === ""` (y `disponible === false`), guiar al técnico a la pantalla de **Completar perfil**.
+2. **Completar el perfil (`PATCH /api/technicians/me`):**
+   - Permitir editar `especialidad`, `descripcion`, `tarifaBase` (número `>= 0` o `null`), `ubicacion`, `experienciaAnios`, y opcionalmente `latitude`/`longitude` (siempre juntos) y `fotoUrl: null`.
+3. **Activar disponibilidad (`PATCH /api/technicians/me/disponibilidad`):**
+   - Enviar `{ "disponible": true }`.
+   - Si el técnico intenta activarse antes de completar `especialidad` y `descripcion`, el backend responderá **409 Conflict** con `{ "error": "Debes completar tu especialidad y descripción antes de activarte como disponible." }`.
+   - Una vez activado (`disponible: true`), el técnico aparecerá en `GET /api/technicians/nearby` y podrá recibir solicitudes.
+4. **Aceptación de solicitudes y estado ocupado:**
+   - Al aceptar una solicitud (`PATCH /api/requests/:id/status` con `{ "status": "ACCEPTED" }`), si el técnico ya tiene un servicio activo (`ACCEPTED`, `ON_THE_WAY` o `IN_PROGRESS`), el backend devolverá **409 Conflict** con `"Ya tienes un servicio en curso. Finalízalo antes de aceptar otro."`. Mostrar este mensaje en un aviso claro al técnico.
+5. **Solicitudes expiradas (`EXPIRED`):**
+   - Si una solicitud permanece en `PENDING` más de `REQUEST_EXPIRY_HOURS` horas (default 24h), el sistema la pasa automáticamente a `EXPIRED` (`texto: "Expirado"`, `paso: null`, `color: "#6B7280"`). En el seguimiento, tratar `EXPIRED` de forma similar a `CANCELLED` (sin barra de progreso del 1 al 5 y con chat deshabilitado).
+
+---
+
 ## Paso 8: Estados de la pantalla
 
 Maneja siempre los 4 estados principales de visualización:

@@ -6,11 +6,12 @@ import { authenticate } from "../middlewares/auth.middleware";
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 10, // máximo 10 intentos por IP cada 15 minutos
+  max: 20, // máximo 20 intentos fallidos por IP cada 15 minutos
+  skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
-    error: "Demasiados intentos desde esta IP. Por favor, intenta de nuevo en 15 minutos.",
+    error: "Demasiados intentos fallidos. Intenta de nuevo en unos minutos.",
   },
 });
 

@@ -9,13 +9,34 @@ const router = Router();
 const technicianController = new TechnicianController();
 const requestController = new RequestController();
 
-// GET /api/technicians/me/requests (protegido para WORKER)
-// Debe ir antes de /:id para evitar colisión de ruta
+// Rutas del perfil propio del técnico (protegidas para WORKER)
+// Deben ir antes de /:id para evitar colisión de ruta
 router.get(
   "/me/requests",
   authenticate,
   requireRole(Role.WORKER),
   requestController.getWorkerRequests
+);
+
+router.get(
+  "/me",
+  authenticate,
+  requireRole(Role.WORKER),
+  technicianController.getMe
+);
+
+router.patch(
+  "/me/disponibilidad",
+  authenticate,
+  requireRole(Role.WORKER),
+  technicianController.updateDisponibilidad
+);
+
+router.patch(
+  "/me",
+  authenticate,
+  requireRole(Role.WORKER),
+  technicianController.updateMe
 );
 
 // GET /api/technicians/nearby?lat=-12.2745&lng=-76.8711&radius=10

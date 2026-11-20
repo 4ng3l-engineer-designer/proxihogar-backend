@@ -10,6 +10,7 @@ import {
   UserProfileResponse,
 } from "../types/auth.types";
 import { HttpError } from "../utils/errors";
+import { getInitials } from "../utils/chatAccess";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const BCRYPT_ROUNDS = 10;
@@ -54,14 +55,24 @@ export class AuthService {
     // 7. Hashear contraseña con bcrypt (10 rondas)
     const hashedPassword = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
-    // 8. Crear usuario en la base de datos
-    const user = await this.userRepository.create({
-      email: normalizedEmail,
-      password: hashedPassword,
-      nombre: dto.nombre.trim(),
-      role: assignedRole,
-      telefono: dto.telefono ? dto.telefono.trim() : undefined,
-    });
+    // 8. Crear usuario en la base de datos (si es WORKER, crear también Technician en la misma transacción)
+    const trimmedNombre = dto.nombre.trim();
+    const user =
+      assignedRole === Role.WORKER
+        ? await this.userRepository.createWorkerWithTechnician({
+            email: normalizedEmail,
+            password: hashedPassword,
+            nombre: trimmedNombre,
+            telefono: dto.telefono ? dto.telefono.trim() : undefined,
+            iniciales: getInitials(trimmedNombre),
+          })
+        : await this.userRepository.create({
+            email: normalizedEmail,
+            password: hashedPassword,
+            nombre: trimmedNombre,
+            role: assignedRole,
+            telefono: dto.telefono ? dto.telefono.trim() : undefined,
+          });
 
     // 9. Generar JWT
     const token = this.generateToken(user.id, user.role);

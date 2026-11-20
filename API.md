@@ -4,7 +4,8 @@
 
 - Autenticación: Mediante JWT en el header `Authorization: Bearer <token>` para rutas protegidas.
 - Rutas públicas por ahora: `/api/technicians/nearby` y `/api/technicians/:id` (se consumen sin token).
-- Rate Limit: Endpoints de autenticación (`/register` y `/login`) limitados a 10 peticiones cada 15 minutos por IP.
+- Rate Limit: Endpoints de autenticación (`/register` y `/login`) limitados a **20 intentos fallidos** cada 15 minutos por IP (`skipSuccessfulRequests: true`). Las peticiones exitosas no descuentan intentos.
+- Expiración automática: Las solicitudes en estado `PENDING` expiran automáticamente tras `REQUEST_EXPIRY_HOURS` horas (por defecto `24`).
 - CORS abierto y protección de cabeceras con Helmet.
 - Todos los errores devuelven `{ "error": "mensaje" }`.
 
@@ -24,7 +25,7 @@ POST /api/auth/register
 | `password` | string | Sí | Contraseña con mínimo 8 caracteres |
 | `nombre` | string | Sí | Nombre del usuario (no vacío) |
 | `telefono` | string | No | Número de teléfono |
-| `role` | string | No | `"CLIENT"` o `"WORKER"` (por defecto `"CLIENT"`) |
+| `role` | string | No | `"CLIENT"` o `"WORKER"` (por defecto `"CLIENT"`). Si es `"WORKER"`, crea automáticamente el perfil `Technician` en la misma transacción con `disponible: false` y `especialidad: "Sin especificar"`. |
 
 **Respuesta 201 Created:**
 ```json
@@ -42,7 +43,7 @@ POST /api/auth/register
 **Errores:**
 - **400 Bad Request:** Validaciones fallidas (nombre vacío, email inválido, contraseña menor a 8 caracteres o rol no permitido).
 - **409 Conflict:** El correo electrónico ya se encuentra registrado.
-- **429 Too Many Requests:** Excedido el límite de 10 intentos por IP en 15 minutos.
+- **429 Too Many Requests:** `{ "error": "Demasiados intentos fallidos. Intenta de nuevo en unos minutos." }` (excedido el límite de 20 intentos fallidos por IP en 15 minutos).
 
 ---
 
@@ -72,7 +73,7 @@ POST /api/auth/login
 
 **Errores:**
 - **401 Unauthorized:** `"Credenciales inválidas"` (se retorna el mismo mensaje si el usuario no existe o si la contraseña no coincide).
-- **429 Too Many Requests:** Excedido el límite de 10 intentos por IP en 15 minutos.
+- **429 Too Many Requests:** `{ "error": "Demasiados intentos fallidos. Intenta de nuevo en unos minutos." }` (excedido el límite de 20 intentos fallidos por IP en 15 minutos).
 
 ---
 
@@ -274,6 +275,79 @@ Authorization: Bearer <token_worker>
 
 ---
 
+### 2.4 Perfil propio del técnico autenticado
+```
+GET /api/technicians/me
+```
+
+Protegido con `authenticate` y `requireRole("WORKER")`. Devuelve todos los campos del perfil del técnico autenticado, incluido `disponible`.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Respuesta 200 OK:**
+Devuelve el objeto de perfil completo del técnico (igual que `GET /api/technicians/:id`) añadiendo el campo booleano `disponible`.
+
+**Errores:**
+- **401 Unauthorized:** Token no proporcionado o inválido.
+- **403 Forbidden:** El usuario no posee el rol `WORKER`.
+- **404 Not Found:** Perfil de técnico no encontrado.
+
+---
+
+### 2.5 Actualizar perfil propio del técnico
+```
+PATCH /api/technicians/me
+```
+
+Protegido con `authenticate` y `requireRole("WORKER")`. Permite al técnico completar o actualizar su perfil profesional.
+
+**Body (JSON — todos los campos son opcionales):**
+| Campo | Tipo | Validación |
+| :--- | :--- | :--- |
+| `especialidad` | string | Texto no vacío |
+| `descripcion` | string | Texto |
+| `tarifaBase` | number \| null | Número `>= 0` o `null` |
+| `ubicacion` | string | Texto no vacío |
+| `experienciaAnios` | number | Entero `>= 0` |
+| `latitude` | number | `-90` a `90` (debe enviarse junto con `longitude`) |
+| `longitude` | number | `-180` a `180` (debe enviarse junto con `latitude`) |
+| `fotoUrl` | null | Por ahora solo se acepta `null` |
+
+> **Campos protegidos:** No permite modificar `verificado`, `calificacion` ni `cantidadResenas`.
+
+**Respuesta 200 OK:** Perfil actualizado del técnico (incluyendo `disponible`).
+
+**Errores:**
+- **400 Bad Request:** Algún campo incumple las validaciones o `latitude`/`longitude` no vienen juntos.
+- **409 Conflict:** Intenta dejar `especialidad` en `"Sin especificar"` o `descripcion` vacía mientras el técnico tiene `disponible: true`.
+
+---
+
+### 2.6 Cambiar disponibilidad del técnico
+```
+PATCH /api/technicians/me/disponibilidad
+```
+
+Protegido con `authenticate` y `requireRole("WORKER")`.
+
+**Body (JSON):**
+```json
+{ "disponible": true }
+```
+
+**Regla de negocio:** `disponible` solo puede pasar a `true` si `especialidad` no es `"Sin especificar"` y `descripcion` no está vacía.
+
+**Respuesta 200 OK:** Perfil actualizado del técnico con el nuevo valor de `disponible`.
+
+**Errores:**
+- **400 Bad Request:** `disponible` no es booleano.
+- **409 Conflict:** `"Debes completar tu especialidad y descripción antes de activarte como disponible."`
+
+---
+
 ## 3. Distritos y coordenadas de referencia (C28 - Mapa)
 
 ```
@@ -450,6 +524,11 @@ Content-Type: application/json
 - **CLIENT dueño:**
   - `PENDING` → `CANCELLED`
   - `ACCEPTED` → `CANCELLED`
+- **Sistema (automático):**
+  - `PENDING` → `EXPIRED` (registrado con `changedBy: "system"` cuando la solicitud supera `REQUEST_EXPIRY_HOURS` horas sin ser aceptada; default `24` horas).
+
+**Regla de técnico ocupado (al aceptar):**
+Cuando la transición es a `ACCEPTED`, el servidor verifica dentro de una transacción (bloqueando la fila del técnico) que no tenga otra solicitud en estado `ACCEPTED`, `ON_THE_WAY` o `IN_PROGRESS`. Si ya tiene una, responde `409 Conflict` con `"Ya tienes un servicio en curso. Finalízalo antes de aceptar otro."`. Esta restricción aplica únicamente al aceptar, no al crear solicitudes.
 
 **Respuesta 200 OK:**
 Objeto de la solicitud con el nuevo `status` y el objeto `estado` actualizado (incorporando el nuevo log en `historial`).
@@ -458,7 +537,7 @@ Objeto de la solicitud con el nuevo `status` y el objeto `estado` actualizado (i
 - **400 Bad Request:** Estado no enviado o valor no reconocido en `RequestStatus`.
 - **401 Unauthorized:** Token no proporcionado o inválido.
 - **404 Not Found:** Solicitud no encontrada o no pertenece al usuario autenticado (si es cliente, no es el dueño; si es técnico, no es el técnico asignado).
-- **409 Conflict:** Transición no permitida (ej. `"No se puede pasar de PENDING a COMPLETED."`).
+- **409 Conflict:** Transición no permitida (ej. `"No se puede pasar de PENDING a COMPLETED."`) o técnico ocupado (`"Ya tienes un servicio en curso. Finalízalo antes de aceptar otro."`).
 
 ---
 
@@ -477,9 +556,12 @@ Endpoint público para consultar la lista de estados configurados en el sistema,
   { "codigo": "ON_THE_WAY", "texto": "Técnico en camino", "paso": 3, "color": "#8B5CF6" },
   { "codigo": "IN_PROGRESS", "texto": "Servicio en progreso", "paso": 4, "color": "#0EA5E9" },
   { "codigo": "COMPLETED", "texto": "Finalizado", "paso": 5, "color": "#10B981" },
-  { "codigo": "CANCELLED", "texto": "Cancelado", "paso": null, "color": "#EF4444" }
+  { "codigo": "CANCELLED", "texto": "Cancelado", "paso": null, "color": "#EF4444" },
+  { "codigo": "EXPIRED", "texto": "Expirado", "paso": null, "color": "#6B7280" }
 ]
 ```
+
+> **Expiración automática (`REQUEST_EXPIRY_HOURS`):** Un job interno (`src/jobs/expireRequests.ts`) se ejecuta al arrancar el servidor y cada 10 minutos para expirar solicitudes `PENDING` más antiguas que `REQUEST_EXPIRY_HOURS` horas (default `24`), registrando un log con `changedBy: "system"` y emitiendo `request:status` por Socket.io. Si la variable `REQUEST_EXPIRY_HOURS` no es un número positivo, el servidor falla al arrancar con un mensaje claro.
 
 ---
 

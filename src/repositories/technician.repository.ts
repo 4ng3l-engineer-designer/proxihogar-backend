@@ -72,4 +72,36 @@ export class TechnicianRepository {
       },
     });
   }
+
+  /**
+   * Obtiene el perfil completo de un técnico por userId con sus reseñas ordenadas por fecha descendente.
+   */
+  async findByUserIdWithReviews(userId: string): Promise<TechnicianWithReviews | null> {
+    return prisma.technician.findUnique({
+      where: { userId },
+      include: {
+        resenas: {
+          orderBy: { createdAt: "desc" },
+        },
+      },
+    });
+  }
+
+  /**
+   * Actualiza campos permitidos del perfil del técnico identificado por userId.
+   */
+  async updateByUserId(
+    userId: string,
+    data: Prisma.TechnicianUpdateInput
+  ): Promise<TechnicianWithReviews> {
+    return prisma.technician.update({
+      where: { userId },
+      data,
+      include: {
+        resenas: {
+          orderBy: { createdAt: "desc" },
+        },
+      },
+    });
+  }
 }

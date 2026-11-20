@@ -1,8 +1,16 @@
 // src/services/technician.service.ts
-import { TechnicianRepository } from "../repositories/technician.repository";
-import { NearbyQueryParams, TecnicoProfileResponse, TecnicoResponse } from "../types/technician.types";
+import { TechnicianRepository, TechnicianWithReviews } from "../repositories/technician.repository";
+import {
+  NearbyQueryParams,
+  TecnicoOwnProfileResponse,
+  TecnicoProfileResponse,
+  TecnicoResponse,
+  UpdateTechnicianProfileDto,
+} from "../types/technician.types";
 import { calculateHaversineDistance, estimateArrivalTime, formatDistance } from "../utils/haversine";
 import { formatTarifa, MONEDA } from "../utils/currency";
+import { HttpError } from "../utils/errors";
+import { Prisma } from "@prisma/client";
 
 export class TechnicianService {
   constructor(private readonly technicianRepository = new TechnicianRepository()) {}
@@ -161,5 +169,186 @@ export class TechnicianService {
     }
 
     return profile;
+  }
+
+  async getMyProfile(userId: string): Promise<TecnicoOwnProfileResponse> {
+    const tech = await this.technicianRepository.findByUserIdWithReviews(userId);
+    if (!tech) {
+      throw new HttpError(404, "Perfil de técnico no encontrado.");
+    }
+    return this.mapOwnProfile(tech);
+  }
+
+  async updateMyProfile(
+    userId: string,
+    dto: UpdateTechnicianProfileDto
+  ): Promise<TecnicoOwnProfileResponse> {
+    const existing = await this.technicianRepository.findByUserIdWithReviews(userId);
+    if (!existing) {
+      throw new HttpError(404, "Perfil de técnico no encontrado.");
+    }
+
+    const updateData: Prisma.TechnicianUpdateInput = {};
+
+    if (dto.especialidad !== undefined) {
+      if (typeof dto.especialidad !== "string" || dto.especialidad.trim() === "") {
+        throw new HttpError(400, "El campo 'especialidad' debe ser un texto no vacío.");
+      }
+      updateData.especialidad = dto.especialidad.trim();
+    }
+
+    if (dto.descripcion !== undefined) {
+      if (typeof dto.descripcion !== "string") {
+        throw new HttpError(400, "El campo 'descripcion' debe ser un texto.");
+      }
+      updateData.descripcion = dto.descripcion.trim();
+    }
+
+    if (dto.tarifaBase !== undefined) {
+      if (dto.tarifaBase === null) {
+        updateData.tarifaBase = null;
+      } else if (typeof dto.tarifaBase === "number" && Number.isFinite(dto.tarifaBase) && dto.tarifaBase >= 0) {
+        updateData.tarifaBase = dto.tarifaBase;
+      } else {
+        throw new HttpError(400, "El campo 'tarifaBase' debe ser un número mayor o igual a 0 o null.");
+      }
+    }
+
+    if (dto.ubicacion !== undefined) {
+      if (typeof dto.ubicacion !== "string" || dto.ubicacion.trim() === "") {
+        throw new HttpError(400, "El campo 'ubicacion' debe ser un texto no vacío.");
+      }
+      updateData.ubicacion = dto.ubicacion.trim();
+    }
+
+    if (dto.experienciaAnios !== undefined) {
+      if (
+        typeof dto.experienciaAnios !== "number" ||
+        !Number.isInteger(dto.experienciaAnios) ||
+        dto.experienciaAnios < 0
+      ) {
+        throw new HttpError(400, "El campo 'experienciaAnios' debe ser un número entero mayor o igual a 0.");
+      }
+      updateData.experienciaAnios = dto.experienciaAnios;
+    }
+
+    const hasLat = dto.latitude !== undefined;
+    const hasLng = dto.longitude !== undefined;
+    if (hasLat !== hasLng) {
+      throw new HttpError(400, "Los campos 'latitude' y 'longitude' deben proporcionarse juntos.");
+    }
+    if (hasLat && hasLng) {
+      if (
+        typeof dto.latitude !== "number" ||
+        typeof dto.longitude !== "number" ||
+        !Number.isFinite(dto.latitude) ||
+        !Number.isFinite(dto.longitude)
+      ) {
+        throw new HttpError(400, "Los campos 'latitude' y 'longitude' deben ser números válidos.");
+      }
+      if (dto.latitude < -90 || dto.latitude > 90 || dto.longitude < -180 || dto.longitude > 180) {
+        throw new HttpError(400, "Coordenadas fuera de rango válido (-90 a 90 para lat, -180 a 180 para lng).");
+      }
+      updateData.latitude = dto.latitude;
+      updateData.longitude = dto.longitude;
+    }
+
+    if (dto.fotoUrl !== undefined) {
+      if (dto.fotoUrl !== null) {
+        throw new HttpError(400, "Por ahora solo se acepta 'fotoUrl' con valor null.");
+      }
+      updateData.fotoUrl = null;
+    }
+
+    // Si el técnico ya estaba disponible y deja incompleta su especialidad o descripción, rechazar con 409
+    const nextEspecialidad =
+      typeof updateData.especialidad === "string" ? updateData.especialidad : existing.especialidad;
+    const nextDescripcion =
+      typeof updateData.descripcion === "string" ? updateData.descripcion : existing.descripcion;
+
+    if (
+      existing.disponible &&
+      (nextEspecialidad === "Sin especificar" || nextDescripcion.trim() === "")
+    ) {
+      throw new HttpError(
+        409,
+        "No puedes dejar la especialidad como 'Sin especificar' ni la descripción vacía mientras estás disponible."
+      );
+    }
+
+    const updated = await this.technicianRepository.updateByUserId(userId, updateData);
+    return this.mapOwnProfile(updated);
+  }
+
+  async updateMyDisponibilidad(
+    userId: string,
+    disponibleInput: unknown
+  ): Promise<TecnicoOwnProfileResponse> {
+    if (typeof disponibleInput !== "boolean") {
+      throw new HttpError(400, "El campo 'disponible' debe ser un valor booleano (true o false).");
+    }
+
+    const existing = await this.technicianRepository.findByUserIdWithReviews(userId);
+    if (!existing) {
+      throw new HttpError(404, "Perfil de técnico no encontrado.");
+    }
+
+    if (disponibleInput === true) {
+      const especialidadValida =
+        existing.especialidad.trim() !== "" && existing.especialidad.trim() !== "Sin especificar";
+      const descripcionValida = existing.descripcion.trim() !== "";
+
+      if (!especialidadValida || !descripcionValida) {
+        throw new HttpError(
+          409,
+          "Debes completar tu especialidad y descripción antes de activarte como disponible."
+        );
+      }
+    }
+
+    const updated = await this.technicianRepository.updateByUserId(userId, {
+      disponible: disponibleInput,
+    });
+    return this.mapOwnProfile(updated);
+  }
+
+  private mapOwnProfile(tech: TechnicianWithReviews): TecnicoOwnProfileResponse {
+    const formattedReviews = tech.resenas.map((r) => ({
+      id: r.id,
+      autor: r.autor,
+      iniciales: r.iniciales,
+      calificacion: r.calificacion,
+      comentario: r.comentario,
+      fecha: r.createdAt.toLocaleDateString("es-PE", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }),
+      tags: r.tags,
+    }));
+
+    return {
+      id: tech.id,
+      nombre: tech.nombre,
+      iniciales: tech.iniciales,
+      fotoUrl: tech.fotoUrl ?? null,
+      colorAvatar: tech.colorAvatar,
+      especialidad: tech.especialidad,
+      especialidades: tech.especialidades,
+      descripcion: tech.descripcion,
+      verificado: tech.verificado,
+      calificacion: tech.calificacion,
+      cantidadResenas: tech.cantidadResenas,
+      cantidadTrabajos: tech.cantidadTrabajos,
+      tarifaBase: tech.tarifaBase,
+      moneda: MONEDA,
+      tarifaTexto: formatTarifa(tech.tarifaBase),
+      ubicacion: tech.ubicacion,
+      experienciaAnios: tech.experienciaAnios,
+      latitude: tech.latitude,
+      longitude: tech.longitude,
+      disponible: tech.disponible,
+      resenas: formattedReviews,
+    };
   }
 }

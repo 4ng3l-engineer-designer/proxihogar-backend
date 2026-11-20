@@ -35,6 +35,12 @@ export function getChatAccess(status: RequestStatus): ChatAccessInfo {
         soloLectura: false,
         motivo: "El servicio fue cancelado",
       };
+    case RequestStatus.EXPIRED:
+      return {
+        disponible: false,
+        soloLectura: false,
+        motivo: "La solicitud expiró sin ser aceptada",
+      };
     default:
       return {
         disponible: false,

@@ -64,6 +64,21 @@ export interface TecnicoProfileResponse {
   calculoAproximado?: boolean;
 }
 
+export interface TecnicoOwnProfileResponse extends TecnicoProfileResponse {
+  disponible: boolean;
+}
+
+export interface UpdateTechnicianProfileDto {
+  especialidad?: string;
+  descripcion?: string;
+  tarifaBase?: number | null;
+  ubicacion?: string;
+  experienciaAnios?: number;
+  latitude?: number;
+  longitude?: number;
+  fotoUrl?: string | null;
+}
+
 export interface NearbyQueryParams {
   lat: number;
   lng: number;

@@ -9,6 +9,15 @@ if (!process.env.JWT_SECRET) {
 import http from "http";
 import app from "./app";
 import { initSocketServer } from "./realtime/socket";
+import { getRequestExpiryHours, startExpireRequestsJob } from "./jobs/expireRequests";
+
+let requestExpiryHours: number;
+try {
+  requestExpiryHours = getRequestExpiryHours();
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
 
 const PORT = process.env.PORT || 3000;
 
@@ -17,6 +26,7 @@ initSocketServer(server);
 
 server.listen(PORT, () => {
   console.log(`🚀 Servidor de ProxiHogar corriendo en http://localhost:${PORT}`);
+  startExpireRequestsJob(requestExpiryHours);
 });
 
 export { server };
