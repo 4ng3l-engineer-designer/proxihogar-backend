@@ -126,6 +126,10 @@ GET /api/technicians/nearby
 
 Los filtros son opcionales y combinables. Los resultados vienen ordenados por distancia ascendente. Solo se retornan técnicos con `disponible: true`.
 
+> **Regla de filtrado doble (cobertura):** Un técnico aparece en `/nearby` únicamente si cumple **ambas** condiciones:
+> 1. `distanceKm <= radius` (radio solicitado por el cliente).
+> 2. Si el técnico tiene `radioCobertura` definido (no `null`), `distanceKm <= radioCobertura` (radio máximo de cobertura del técnico en km). Si `radioCobertura` es `null`, no se aplica límite propio del técnico.
+
 ### Ejemplo
 
 ```
@@ -157,6 +161,7 @@ Campos de cada técnico:
 - `tarifaBase` (number | null): monto base o `null` si no tiene tarifa fija
 - `moneda` (string): código de moneda (`"PEN"`)
 - `tarifaTexto` (string): tarifa formateada lista para mostrar en la interfaz (ej. `"S/ 30.00"` o `"Tarifa a convenir"` si es `null`)
+- `radioCobertura` (number | null): radio máximo de cobertura en km definido por el técnico, o `null` si no tiene límite
 - `ubicacion` (string)
 - `experienciaAnios` (number)
 - `latitude` (number): latitud del técnico (para ubicar pines en el mapa C28)
@@ -200,7 +205,7 @@ GET /api/technicians/:id
 
 Objeto completo del perfil del técnico con reseñas ordenadas de la más reciente a la más antigua:
 
-- Campos base: `id`, `nombre`, `iniciales`, `fotoUrl` (string | null), `colorAvatar`, `especialidad`, `especialidades`, `descripcion`, `verificado`, `calificacion`, `cantidadResenas`, `cantidadTrabajos`, `tarifaBase` (number | null), `moneda` (string), `tarifaTexto` (string), `ubicacion`, `experienciaAnios`, `latitude`, `longitude`, `resenas`.
+- Campos base: `id`, `nombre`, `iniciales`, `fotoUrl` (string | null), `colorAvatar`, `especialidad`, `especialidades`, `descripcion`, `verificado`, `calificacion`, `cantidadResenas`, `cantidadTrabajos`, `tarifaBase` (number | null), `moneda` (string), `tarifaTexto` (string), `radioCobertura` (number | null), `ubicacion`, `experienciaAnios`, `latitude`, `longitude`, `resenas`.
 - Si se enviaron `lat` y `lng` válidos, se agregan:
   - `distanceKm` (number)
   - `distanciaTexto` (string: ej. `"2.5 km"` o `"850 m"`)
@@ -368,6 +373,7 @@ Protegido con `authenticate` y `requireRole("WORKER")`. Permite al técnico comp
 | `especialidad` | string | Texto no vacío |
 | `descripcion` | string | Texto |
 | `tarifaBase` | number \| null | Número `>= 0` o `null` |
+| `radioCobertura` | number \| null | Número positivo `> 0` (en km) o `null` ("sin límite definido") |
 | `ubicacion` | string | Texto no vacío |
 | `experienciaAnios` | number | Entero `>= 0` |
 | `latitude` | number | `-90` a `90` (debe enviarse junto con `longitude`) |

@@ -1568,7 +1568,8 @@ Cuando un usuario se registra con `role: "WORKER"` en `POST /api/auth/register`,
    - Al iniciar sesión como `WORKER`, llamar a `GET /api/technicians/me` con el token Bearer.
    - Si `especialidad === "Sin especificar"` o `descripcion === ""` (y `disponible === false`), guiar al técnico a la pantalla de **Completar perfil**.
 2. **Completar el perfil (`PATCH /api/technicians/me`):**
-   - Permitir editar `especialidad`, `descripcion`, `tarifaBase` (número `>= 0` o `null`), `ubicacion`, `experienciaAnios`, y opcionalmente `latitude`/`longitude` (siempre juntos) y `fotoUrl: null`.
+   - Permitir editar `especialidad`, `descripcion`, `tarifaBase` (número `>= 0` o `null`), `radioCobertura` (número positivo `> 0` en km o `null` para "sin límite definido"), `ubicacion`, `experienciaAnios`, y opcionalmente `latitude`/`longitude` (siempre juntos) y `fotoUrl: null`.
+   - El perfil del técnico (`GET /api/technicians/me`, `/nearby` y `/:id`) incluye `radioCobertura`, que puede editarse desde la vista del técnico para limitar a qué distancia máxima aparece en las búsquedas de clientes.
 3. **Activar disponibilidad (`PATCH /api/technicians/me/disponibilidad`):**
    - Enviar `{ "disponible": true }`.
    - Si el técnico intenta activarse antes de completar `especialidad` y `descripcion`, el backend responderá **409 Conflict** con `{ "error": "Debes completar tu especialidad y descripción antes de activarte como disponible." }`.

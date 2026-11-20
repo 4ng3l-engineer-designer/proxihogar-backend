@@ -30,6 +30,7 @@ export interface TecnicoResponse {
   tarifaBase: number | null;
   moneda: string;
   tarifaTexto: string;
+  radioCobertura: number | null;
   ubicacion: string;
   experienciaAnios: number;
   latitude: number;
@@ -53,6 +54,7 @@ export interface TecnicoProfileResponse {
   tarifaBase: number | null;
   moneda: string;
   tarifaTexto: string;
+  radioCobertura: number | null;
   ubicacion: string;
   experienciaAnios: number;
   latitude: number;
@@ -72,6 +74,7 @@ export interface UpdateTechnicianProfileDto {
   especialidad?: string;
   descripcion?: string;
   tarifaBase?: number | null;
+  radioCobertura?: number | null;
   ubicacion?: string;
   experienciaAnios?: number;
   latitude?: number;

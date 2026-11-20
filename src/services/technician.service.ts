@@ -41,6 +41,15 @@ export class TechnicianService {
       const distance = calculateHaversineDistance(lat, lng, tech.latitude, tech.longitude);
 
       if (distance <= radiusKm) {
+        // Regla de cobertura del técnico: si radioCobertura está definido, la distancia no puede superarlo
+        if (
+          tech.radioCobertura !== null &&
+          tech.radioCobertura !== undefined &&
+          distance > tech.radioCobertura
+        ) {
+          continue;
+        }
+
         // Filtro opcional: especialidad (coincidencia en especialidad principal o en array especialidades)
         if (especialidad) {
           const espQuery = especialidad.toLowerCase();
@@ -104,6 +113,7 @@ export class TechnicianService {
           tarifaBase: tech.tarifaBase,
           moneda: MONEDA,
           tarifaTexto: formatTarifa(tech.tarifaBase),
+          radioCobertura: tech.radioCobertura ?? null,
           ubicacion: tech.ubicacion,
           experienciaAnios: tech.experienciaAnios,
           latitude: tech.latitude,
@@ -157,6 +167,7 @@ export class TechnicianService {
       tarifaBase: tech.tarifaBase,
       moneda: MONEDA,
       tarifaTexto: formatTarifa(tech.tarifaBase),
+      radioCobertura: tech.radioCobertura ?? null,
       ubicacion: tech.ubicacion,
       experienciaAnios: tech.experienciaAnios,
       latitude: tech.latitude,
@@ -220,6 +231,23 @@ export class TechnicianService {
         updateData.tarifaBase = dto.tarifaBase;
       } else {
         throw new HttpError(400, "El campo 'tarifaBase' debe ser un número mayor o igual a 0 o null.");
+      }
+    }
+
+    if (dto.radioCobertura !== undefined) {
+      if (dto.radioCobertura === null) {
+        updateData.radioCobertura = null;
+      } else if (
+        typeof dto.radioCobertura === "number" &&
+        Number.isFinite(dto.radioCobertura) &&
+        dto.radioCobertura > 0
+      ) {
+        updateData.radioCobertura = dto.radioCobertura;
+      } else {
+        throw new HttpError(
+          400,
+          "El campo 'radioCobertura' debe ser un número positivo mayor a 0 (en km) o null."
+        );
       }
     }
 
@@ -436,6 +464,7 @@ export class TechnicianService {
       tarifaBase: tech.tarifaBase,
       moneda: MONEDA,
       tarifaTexto: formatTarifa(tech.tarifaBase),
+      radioCobertura: tech.radioCobertura ?? null,
       ubicacion: tech.ubicacion,
       experienciaAnios: tech.experienciaAnios,
       latitude: tech.latitude,
