@@ -8,6 +8,16 @@ export type TechnicianWithReviews = Prisma.TechnicianGetPayload<{
   };
 }>;
 
+export type TechnicianWithUser = Prisma.TechnicianGetPayload<{
+  include: {
+    user: {
+      select: {
+        telefono: true;
+      };
+    };
+  };
+}>;
+
 export class TechnicianRepository {
   /**
    * Obtiene todos los técnicos con estado disponible = true, incluyendo sus reseñas.
@@ -60,7 +70,7 @@ export class TechnicianRepository {
   /**
    * Obtiene un técnico por el userId asociado a su cuenta.
    */
-  async findByUserId(userId: string) {
+  async findByUserId(userId: string): Promise<TechnicianWithUser | null> {
     return prisma.technician.findUnique({
       where: { userId },
       include: {
