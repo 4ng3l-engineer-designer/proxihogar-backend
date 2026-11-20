@@ -13,6 +13,7 @@ export class MessageRepository {
     archivoPath?: string | null;
     archivoMime?: string | null;
     archivoSize?: number | null;
+    idempotencyKey?: string | null;
   }): Promise<Message> {
     return prisma.message.create({
       data: {
@@ -24,8 +25,113 @@ export class MessageRepository {
         archivoPath: data.archivoPath ?? null,
         archivoMime: data.archivoMime ?? null,
         archivoSize: data.archivoSize ?? null,
+        idempotencyKey: data.idempotencyKey ?? null,
       },
     });
+  }
+
+  async findByIdempotencyKey(requestId: string, idempotencyKey: string): Promise<Message | null> {
+    return prisma.message.findUnique({
+      where: {
+        requestId_idempotencyKey: {
+          requestId,
+          idempotencyKey,
+        },
+      },
+    });
+  }
+
+  async markAsRead(requestId: string, readerUserId: string, readAt: Date): Promise<number> {
+    const result = await prisma.message.updateMany({
+      where: {
+        requestId,
+        senderId: { not: readerUserId },
+        readAt: null,
+      },
+      data: {
+        readAt,
+      },
+    });
+    return result.count;
+  }
+
+  async getChatSummariesForRequests(
+    requestIds: string[],
+    currentUserId: string
+  ): Promise<
+    Map<
+      string,
+      {
+        mensajesNoLeidos: number;
+        ultimoMensaje: { contenido: string; fecha: Date; esMio: boolean } | null;
+      }
+    >
+  > {
+    const map = new Map<
+      string,
+      {
+        mensajesNoLeidos: number;
+        ultimoMensaje: { contenido: string; fecha: Date; esMio: boolean } | null;
+      }
+    >();
+
+    if (requestIds.length === 0) {
+      return map;
+    }
+
+    const [unreadGroups, allMessagesDesc] = await Promise.all([
+      prisma.message.groupBy({
+        by: ["requestId"],
+        where: {
+          requestId: { in: requestIds },
+          senderId: { not: currentUserId },
+          readAt: null,
+        },
+        _count: { _all: true },
+      }),
+      prisma.message.findMany({
+        where: { requestId: { in: requestIds } },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        distinct: ["requestId"],
+        select: {
+          requestId: true,
+          tipo: true,
+          contenido: true,
+          senderId: true,
+          createdAt: true,
+        },
+      }),
+    ]);
+
+    const unreadMap = new Map<string, number>();
+    for (const g of unreadGroups) {
+      unreadMap.set(g.requestId, g._count._all);
+    }
+
+    const lastMap = new Map<
+      string,
+      { contenido: string; fecha: Date; esMio: boolean }
+    >();
+    for (const m of allMessagesDesc) {
+      const preview =
+        m.tipo === MessageType.IMAGE
+          ? "📷 Imagen"
+          : (m.contenido ?? "").slice(0, 50);
+      lastMap.set(m.requestId, {
+        contenido: preview,
+        fecha: m.createdAt,
+        esMio: m.senderId === currentUserId,
+      });
+    }
+
+    for (const reqId of requestIds) {
+      map.set(reqId, {
+        mensajesNoLeidos: unreadMap.get(reqId) ?? 0,
+        ultimoMensaje: lastMap.get(reqId) ?? null,
+      });
+    }
+
+    return map;
   }
 
   async findById(id: string): Promise<Message | null> {

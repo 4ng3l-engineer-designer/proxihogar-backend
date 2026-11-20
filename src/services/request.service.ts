@@ -16,6 +16,7 @@ import {
   WorkerRequestResponse,
 } from "../types/request.types";
 import {
+  MarkReadResponse,
   MessageArchivoResponse,
   MessageResponse,
   MessagesListResponse,
@@ -25,7 +26,7 @@ import { calculateHaversineDistance, estimateArrivalTime, formatDistance } from 
 import { formatTarifa, MONEDA } from "../utils/currency";
 import { buildEstadoResponse } from "../utils/requestStatus";
 import { getChatAccess, getInitials } from "../utils/chatAccess";
-import { emitChatMessage, emitRequestStatus } from "../realtime/socket";
+import { emitChatMessage, emitChatRead, emitRequestStatus } from "../realtime/socket";
 import { routingService } from "./routing.service";
 import { mapOrdenTrabajoResumen } from "./workOrder.service";
 import {
@@ -148,7 +149,17 @@ export class RequestService {
 
   async getClientRequests(clientId: string): Promise<RequestResponse[]> {
     const requests = await this.requestRepository.findByClientId(clientId);
-    return requests.map((r) => this.mapToResponse(r));
+    const summaries = await this.messageRepository.getChatSummariesForRequests(
+      requests.map((r) => r.id),
+      clientId
+    );
+    return requests.map((r) => {
+      const mapped = this.mapToResponse(r);
+      const summary = summaries.get(r.id);
+      mapped.mensajesNoLeidos = summary?.mensajesNoLeidos ?? 0;
+      mapped.ultimoMensaje = summary?.ultimoMensaje ?? null;
+      return mapped;
+    });
   }
 
   async getRequestById(id: string, clientId: string): Promise<RequestResponse> {
@@ -159,7 +170,10 @@ export class RequestService {
       throw new HttpError(404, "Solicitud no encontrada.");
     }
 
-    return this.mapToResponse(request);
+    const mapped = this.mapToResponse(request);
+    const summaries = await this.messageRepository.getChatSummariesForRequests([id], clientId);
+    mapped.mensajesNoLeidos = summaries.get(id)?.mensajesNoLeidos ?? 0;
+    return mapped;
   }
 
   async updateStatus(
@@ -328,7 +342,17 @@ export class RequestService {
     }
 
     const requests = await this.requestRepository.findByTechnicianId(tech.id);
-    return requests.map((r) => this.mapWorkerRequest(r));
+    const summaries = await this.messageRepository.getChatSummariesForRequests(
+      requests.map((r) => r.id),
+      userId
+    );
+    return requests.map((r) => {
+      const mapped = this.mapWorkerRequest(r);
+      const summary = summaries.get(r.id);
+      mapped.mensajesNoLeidos = summary?.mensajesNoLeidos ?? 0;
+      mapped.ultimoMensaje = summary?.ultimoMensaje ?? null;
+      return mapped;
+    });
   }
 
   async getWorkerRequestById(requestId: string, userId: string): Promise<WorkerRequestResponse> {
@@ -342,7 +366,10 @@ export class RequestService {
       throw new HttpError(404, "Solicitud no encontrada.");
     }
 
-    return this.mapWorkerRequest(request);
+    const mapped = this.mapWorkerRequest(request);
+    const summaries = await this.messageRepository.getChatSummariesForRequests([requestId], userId);
+    mapped.mensajesNoLeidos = summaries.get(requestId)?.mensajesNoLeidos ?? 0;
+    return mapped;
   }
 
   private mapWorkerRequest(r: import("../repositories/request.repository").WorkerRequestWithClient): WorkerRequestResponse {
@@ -422,6 +449,26 @@ export class RequestService {
     };
   }
 
+  async markMessagesAsRead(
+    requestId: string,
+    userId: string,
+    userRole: Role
+  ): Promise<MarkReadResponse> {
+    await this.validateParticipant(requestId, userId, userRole);
+
+    const readAt = new Date();
+    const leidos = await this.messageRepository.markAsRead(requestId, userId, readAt);
+
+    emitChatRead(requestId, {
+      requestId,
+      readBy: userId,
+      readAt,
+      count: leidos,
+    });
+
+    return { leidos };
+  }
+
   async getMessages(
     requestId: string,
     userId: string,
@@ -431,7 +478,12 @@ export class RequestService {
     const request = await this.validateParticipant(requestId, userId, userRole);
 
     const chat = getChatAccess(request.status);
-    if (!chat.disponible) {
+    // Permitir lectura si es CANCELLED pero llegó a ser ACCEPTED en algún momento
+    const wasAcceptedBeforeCancel =
+      request.status === RequestStatus.CANCELLED &&
+      request.statusLogs.some((log) => log.status === RequestStatus.ACCEPTED);
+
+    if (!chat.disponible && !wasAcceptedBeforeCancel) {
       throw new HttpError(403, chat.motivo || "El chat no está disponible para este servicio.");
     }
 
@@ -442,30 +494,7 @@ export class RequestService {
     });
 
     const formattedMensajes: MessageResponse[] = await Promise.all(
-      mensajes.map(async (m) => {
-        let archivo: MessageArchivoResponse | null = null;
-        if (m.tipo === MessageType.IMAGE && m.archivoPath) {
-          const { url, expiraEn } = await createSignedStorageUrl(m.archivoPath);
-          archivo = {
-            url,
-            mime: m.archivoMime ?? "image/jpeg",
-            size: m.archivoSize ?? 0,
-            expiraEn,
-          };
-        }
-
-        return {
-          id: m.id,
-          requestId: m.requestId,
-          tipo: m.tipo,
-          contenido: m.contenido,
-          archivo,
-          createdAt: m.createdAt,
-          senderId: m.senderId,
-          senderRole: m.senderRole,
-          esMio: m.senderId === userId,
-        };
-      })
+      mensajes.map((m) => this.formatMessageResponse(m, userId))
     );
 
     return {
@@ -478,8 +507,9 @@ export class RequestService {
     requestId: string,
     userId: string,
     userRole: Role,
-    contenidoInput: unknown
-  ): Promise<MessageResponse> {
+    contenidoInput: unknown,
+    idempotencyKeyInput?: unknown
+  ): Promise<{ message: MessageResponse; created: boolean }> {
     const request = await this.validateParticipant(requestId, userId, userRole);
 
     const chat = getChatAccess(request.status);
@@ -490,6 +520,8 @@ export class RequestService {
     if (chat.soloLectura) {
       throw new HttpError(409, "El servicio finalizó; el chat es solo de lectura");
     }
+
+    const idempotencyKey = this.validateIdempotencyKey(idempotencyKeyInput);
 
     if (typeof contenidoInput !== "string") {
       throw new HttpError(400, "El campo 'contenido' es obligatorio.");
@@ -504,12 +536,26 @@ export class RequestService {
       throw new HttpError(400, "El contenido no puede superar los 1000 caracteres.");
     }
 
+    if (idempotencyKey) {
+      const existing = await this.messageRepository.findByIdempotencyKey(
+        requestId,
+        idempotencyKey
+      );
+      if (existing) {
+        return {
+          message: await this.formatMessageResponse(existing, userId),
+          created: false,
+        };
+      }
+    }
+
     const message = await this.messageRepository.create({
       requestId,
       senderId: userId,
       senderRole: userRole,
       tipo: MessageType.TEXT,
       contenido: trimmed,
+      idempotencyKey,
     });
 
     // Emitir mensaje en tiempo real a la sala de Socket.io
@@ -519,21 +565,26 @@ export class RequestService {
       tipo: message.tipo,
       contenido: message.contenido,
       archivo: null,
+      leido: message.readAt !== null,
       createdAt: message.createdAt,
       senderId: message.senderId,
       senderRole: message.senderRole,
     });
 
     return {
-      id: message.id,
-      requestId: message.requestId,
-      tipo: message.tipo,
-      contenido: message.contenido,
-      archivo: null,
-      createdAt: message.createdAt,
-      senderId: message.senderId,
-      senderRole: message.senderRole,
-      esMio: true,
+      message: {
+        id: message.id,
+        requestId: message.requestId,
+        tipo: message.tipo,
+        contenido: message.contenido,
+        archivo: null,
+        leido: message.readAt !== null,
+        createdAt: message.createdAt,
+        senderId: message.senderId,
+        senderRole: message.senderRole,
+        esMio: true,
+      },
+      created: true,
     };
   }
 
@@ -542,8 +593,9 @@ export class RequestService {
     userId: string,
     userRole: Role,
     file: Express.Multer.File | undefined,
-    contenidoInput: unknown
-  ): Promise<MessageResponse> {
+    contenidoInput: unknown,
+    idempotencyKeyInput?: unknown
+  ): Promise<{ message: MessageResponse; created: boolean }> {
     const request = await this.validateParticipant(requestId, userId, userRole);
 
     const chat = getChatAccess(request.status);
@@ -553,6 +605,20 @@ export class RequestService {
 
     if (chat.soloLectura) {
       throw new HttpError(409, "El servicio finalizó; el chat es solo de lectura");
+    }
+
+    const idempotencyKey = this.validateIdempotencyKey(idempotencyKeyInput);
+    if (idempotencyKey) {
+      const existing = await this.messageRepository.findByIdempotencyKey(
+        requestId,
+        idempotencyKey
+      );
+      if (existing) {
+        return {
+          message: await this.formatMessageResponse(existing, userId),
+          created: false,
+        };
+      }
     }
 
     if (!file || !file.buffer || file.buffer.length === 0) {
@@ -607,6 +673,7 @@ export class RequestService {
         archivoPath,
         archivoMime: detected.mime,
         archivoSize: file.buffer.length,
+        idempotencyKey,
       });
     } catch (dbError) {
       await deleteFromStorage([archivoPath]);
@@ -629,21 +696,72 @@ export class RequestService {
       tipo: message.tipo,
       contenido: message.contenido,
       archivo,
+      leido: message.readAt !== null,
       createdAt: message.createdAt,
       senderId: message.senderId,
       senderRole: message.senderRole,
     });
 
     return {
-      id: message.id,
-      requestId: message.requestId,
-      tipo: message.tipo,
-      contenido: message.contenido,
+      message: {
+        id: message.id,
+        requestId: message.requestId,
+        tipo: message.tipo,
+        contenido: message.contenido,
+        archivo,
+        leido: message.readAt !== null,
+        createdAt: message.createdAt,
+        senderId: message.senderId,
+        senderRole: message.senderRole,
+        esMio: true,
+      },
+      created: true,
+    };
+  }
+
+  private validateIdempotencyKey(raw: unknown): string | null {
+    if (raw === undefined || raw === null) {
+      return null;
+    }
+    if (typeof raw !== "string") {
+      throw new HttpError(400, "El campo 'idempotencyKey' debe ser texto.");
+    }
+    const trimmed = raw.trim();
+    if (trimmed.length === 0) {
+      return null;
+    }
+    if (trimmed.length > 36) {
+      throw new HttpError(400, "El campo 'idempotencyKey' no puede superar los 36 caracteres.");
+    }
+    return trimmed;
+  }
+
+  private async formatMessageResponse(
+    m: import("@prisma/client").Message,
+    userId: string
+  ): Promise<MessageResponse> {
+    let archivo: MessageArchivoResponse | null = null;
+    if (m.tipo === MessageType.IMAGE && m.archivoPath) {
+      const { url, expiraEn } = await createSignedStorageUrl(m.archivoPath);
+      archivo = {
+        url,
+        mime: m.archivoMime ?? "image/jpeg",
+        size: m.archivoSize ?? 0,
+        expiraEn,
+      };
+    }
+
+    return {
+      id: m.id,
+      requestId: m.requestId,
+      tipo: m.tipo,
+      contenido: m.contenido,
       archivo,
-      createdAt: message.createdAt,
-      senderId: message.senderId,
-      senderRole: message.senderRole,
-      esMio: true,
+      leido: m.readAt !== null,
+      createdAt: m.createdAt,
+      senderId: m.senderId,
+      senderRole: m.senderRole,
+      esMio: m.senderId === userId,
     };
   }
 

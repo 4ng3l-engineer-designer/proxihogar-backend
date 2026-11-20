@@ -22,6 +22,7 @@ router.get("/:id/chat", requestController.getChatAccess);
 
 // Mensajes del chat (disponible para CLIENT dueño y WORKER asignado)
 router.get("/:id/messages", requestController.getMessages);
+router.patch("/:id/messages/read", requestController.markMessagesAsRead);
 router.post("/:id/messages/image", uploadChatImage, requestController.createImageMessage);
 router.post("/:id/messages", requestController.createMessage);
 

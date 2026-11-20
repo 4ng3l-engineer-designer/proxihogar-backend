@@ -1017,7 +1017,12 @@ export interface MensajeChat {
   senderId: string;
   senderRole: "CLIENT" | "WORKER";
   esMio?: boolean;
+  leido?: boolean;
 }
+
+// Resumen en listados (GET /api/requests y GET /api/technicians/me/requests):
+// - mensajesNoLeidos: number (para mostrar badge de no leídos en la tarjeta)
+// - ultimoMensaje: { contenido: string; fecha: string; esMio: boolean } | null (preview en lista)
 
 export interface HistorialMensajesResponse {
   mensajes: MensajeChat[];
@@ -1127,6 +1132,15 @@ export function PantallaChat({ solicitudId, miUsuarioId }: Props) {
       setChatInfo(acceso);
       setMensajes(dataMensajes.mensajes);
       setHayMas(dataMensajes.hayMas);
+
+      // Marcar como leídos los mensajes recibidos al abrir el chat
+      const token = await getAuthToken();
+      if (token) {
+        fetch(`${API_URL}/api/requests/${solicitudId}/messages/read`, {
+          method: "PATCH",
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch(() => {});
+      }
     } catch (err: any) {
       Alert.alert("Error", err.message || "No se pudo acceder al chat.");
     } finally {
@@ -1173,7 +1187,23 @@ export function PantallaChat({ solicitudId, miUsuarioId }: Props) {
           }
           return [...prev, msg];
         });
+        // Si el mensaje es del otro usuario y el chat está abierto, marcar como leído
+        if (!msg.esMio) {
+          fetch(`${API_URL}/api/requests/${requestId}/messages/read`, {
+            method: "PATCH",
+            headers: { Authorization: `Bearer ${token}` },
+          }).catch(() => {});
+        }
         setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      });
+
+      // Actualizar indicador de lectura cuando el otro usuario lee los mensajes
+      socket.on("chat:read", ({ readBy }) => {
+        if (readBy !== myUserId) {
+          setMensajes((prev) =>
+            prev.map((m) => (m.esMio && !m.leido ? { ...m, leido: true } : m))
+          );
+        }
       });
 
       // Recibir actualización de estado de la solicitud

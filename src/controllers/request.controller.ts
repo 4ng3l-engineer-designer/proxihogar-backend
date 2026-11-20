@@ -171,15 +171,16 @@ export class RequestController {
       const userId = req.user!.id;
       const userRole = req.user!.role;
       const requestId = req.params.id;
-      const { contenido } = req.body;
+      const { contenido, idempotencyKey } = req.body;
 
       const result = await this.requestService.createMessage(
         requestId,
         userId,
         userRole,
-        contenido
+        contenido,
+        idempotencyKey
       );
-      res.status(201).json(result);
+      res.status(result.created ? 201 : 200).json(result.message);
     } catch (error) {
       if (error instanceof HttpError) {
         res.status(error.statusCode).json({ error: error.message });
@@ -198,21 +199,45 @@ export class RequestController {
       const userRole = req.user!.role;
       const requestId = req.params.id;
       const contenido = req.body?.contenido;
+      const idempotencyKey = req.body?.idempotencyKey;
 
       const result = await this.requestService.createImageMessage(
         requestId,
         userId,
         userRole,
         req.file,
-        contenido
+        contenido,
+        idempotencyKey
       );
-      res.status(201).json(result);
+      res.status(result.created ? 201 : 200).json(result.message);
     } catch (error) {
       if (error instanceof HttpError) {
         res.status(error.statusCode).json({ error: error.message });
         return;
       }
       console.error("Error al enviar imagen:", error);
+      res.status(500).json({
+        error: "Ocurrió un error interno al procesar la solicitud.",
+      });
+    }
+  };
+
+  markMessagesAsRead = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+      const result = await this.requestService.markMessagesAsRead(
+        req.params.id,
+        userId,
+        userRole
+      );
+      res.status(200).json(result);
+    } catch (error) {
+      if (error instanceof HttpError) {
+        res.status(error.statusCode).json({ error: error.message });
+        return;
+      }
+      console.error("Error al marcar mensajes como leídos:", error);
       res.status(500).json({
         error: "Ocurrió un error interno al procesar la solicitud.",
       });

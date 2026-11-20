@@ -14,6 +14,7 @@ export interface MessageResponse {
   tipo: MessageType;
   contenido: string | null;
   archivo: MessageArchivoResponse | null;
+  leido: boolean;
   createdAt: Date;
   senderId: string;
   senderRole: Role;
@@ -27,6 +28,7 @@ export interface MessagesListResponse {
 
 export interface CreateMessageDto {
   contenido: string;
+  idempotencyKey?: string;
 }
 
 export interface MessageSocketPayload {
@@ -35,7 +37,18 @@ export interface MessageSocketPayload {
   tipo: MessageType;
   contenido: string | null;
   archivo: MessageArchivoResponse | null;
+  leido: boolean;
   createdAt: Date;
   senderId: string;
   senderRole: Role;
+}
+
+export interface UltimoMensajeResumen {
+  contenido: string;
+  fecha: Date;
+  esMio: boolean;
+}
+
+export interface MarkReadResponse {
+  leidos: number;
 }

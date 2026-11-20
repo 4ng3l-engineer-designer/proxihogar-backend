@@ -215,15 +215,18 @@ model Message {
   senderRole  Role
   tipo        MessageType  @default(TEXT)
   contenido   String?
-  archivoPath String?
-  archivoMime String?
-  archivoSize Int?
-  createdAt   DateTime     @default(now())
+  archivoPath    String?
+  archivoMime    String?
+  archivoSize    Int?
+  readAt         DateTime?
+  idempotencyKey String?
+  createdAt      DateTime     @default(now())
 
   // Relaciones
   request     Request      @relation(fields: [requestId], references: [id], onDelete: Cascade)
   sender      User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
 
+  @@unique([requestId, idempotencyKey])
   @@index([requestId, createdAt])
   @@map("messages")
 }

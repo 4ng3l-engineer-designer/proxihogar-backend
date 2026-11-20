@@ -162,3 +162,12 @@ export function emitWorkOrderPaid(requestId: string, payload: any): void {
     io.to(`request:${requestId}`).emit("workorder:paid", payload);
   }
 }
+
+export function emitChatRead(
+  requestId: string,
+  payload: { requestId: string; readBy: string; readAt: Date; count: number }
+): void {
+  if (io) {
+    io.to(`request:${requestId}`).emit("chat:read", payload);
+  }
+}

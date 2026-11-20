@@ -326,10 +326,19 @@ Authorization: Bearer <token_worker>
       "disponible": false,
       "soloLectura": false,
       "motivo": "Esperando que el técnico acepte el servicio"
+    },
+    "mensajesNoLeidos": 2,
+    "ultimoMensaje": {
+      "contenido": "Ya estoy en camino, llego en 15 min.",
+      "fecha": "2026-10-22T16:45:00.000Z",
+      "esMio": false
     }
   }
 ]
 ```
+
+> **`ultimoMensaje`:** Objeto `{ contenido, fecha, esMio }` o `null` si no hay mensajes. Si el último mensaje es de tipo `TEXT`, `contenido` se recorta a un máximo de 50 caracteres; si es de tipo `IMAGE`, `contenido` es `"📷 Imagen"`.
+> **`mensajesNoLeidos`:** Cantidad de mensajes recibidos por el usuario autenticado (`senderId !== userId`) que aún no han sido marcados como leídos (`readAt === null`).
 
 **Errores:**
 - **401 Unauthorized:** Token no proporcionado o inválido.
@@ -343,7 +352,7 @@ Authorization: Bearer <token_worker>
 GET /api/technicians/me/requests/:id
 ```
 
-Protegido con `authenticate` y `requireRole("WORKER")`. Devuelve el detalle de una solicitud específica asignada al técnico autenticado (buscado por el `userId` del token), incluyendo los datos básicos del cliente (`nombre`, `telefono` — sin `email` ni `password`), `estado` completo con `historial` y `chat`. No incluye datos del perfil del técnico ni de otros técnicos.
+Protegido con `authenticate` y `requireRole("WORKER")`. Devuelve el detalle de una solicitud específica asignada al técnico autenticado (buscado por el `userId` del token), incluyendo los datos básicos del cliente (`nombre`, `telefono` — sin `email` ni `password`), `estado` completo con `historial`, `chat` y `mensajesNoLeidos`. No incluye datos del perfil del técnico ni de otros técnicos.
 
 **Headers:**
 ```
@@ -646,7 +655,7 @@ GET /api/requests
 Devuelve las solicitudes creadas por el cliente autenticado, ordenadas de la más reciente a la más antigua.
 
 **Respuesta 200 OK:**
-Array de solicitudes con la estructura descrita en el punto 4.1 (incluyendo `tecnico` y `estado`).
+Array de solicitudes con la estructura descrita en el punto 4.1 (incluyendo `tecnico`, `estado`, `mensajesNoLeidos` y `ultimoMensaje`: `{ contenido, fecha, esMio } | null`).
 
 **Errores:**
 - **401 Unauthorized:** Token no proporcionado o inválido.
@@ -662,7 +671,7 @@ GET /api/requests/:id
 Obtiene los datos de la solicitud, el objeto `tecnico` y el objeto `estado` completo para la pantalla de seguimiento y la cabecera del chat.
 
 **Respuesta 200 OK:**
-Objeto de la solicitud con `tecnico` y `estado`.
+Objeto de la solicitud con `tecnico`, `estado` y `mensajesNoLeidos`.
 
 **Errores:**
 - **401 Unauthorized:** Token no proporcionado o inválido.
@@ -841,8 +850,8 @@ Authorization: Bearer <token>
 
 **Reglas de acceso:**
 - **404 Not Found:** La solicitud no existe o el usuario no es participante.
-- **403 Forbidden:** El chat no está disponible en el estado actual (`PENDING`, `CANCELLED` o `EXPIRED`).
-- En estado `COMPLETED` el chat es de solo lectura, por lo que **sí permite leer los mensajes** (200 OK).
+- **403 Forbidden:** El chat no está disponible en el estado actual (`PENDING`, `EXPIRED`, o `CANCELLED` si nunca llegó a `ACCEPTED`).
+- En estado `COMPLETED`, o en estado `CANCELLED` cuando la solicitud llegó al menos a `ACCEPTED` en su historial, el chat es de solo lectura, por lo que **sí permite leer los mensajes** (200 OK).
 - Los mensajes se devuelven ordenados **cronológicamente del más antiguo al más reciente**.
 
 **Respuesta 200 OK:**
@@ -884,7 +893,8 @@ Authorization: Bearer <token>
       "createdAt": "2026-10-22T20:16:30.000Z",
       "senderId": "3339f0ad-83a2-4f82-becb-82225d6a7489",
       "senderRole": "CLIENT",
-      "esMio": true
+      "esMio": true,
+      "leido": true
     }
   ],
   "hayMas": false
@@ -895,7 +905,7 @@ Authorization: Bearer <token>
 
 **Errores:**
 - **401 Unauthorized:** Token no proporcionado o expirado.
-- **403 Forbidden:** Chat no disponible (`PENDING` o `CANCELLED`).
+- **403 Forbidden:** Chat no disponible (`PENDING`, `EXPIRED`, o `CANCELLED` sin haber llegado a `ACCEPTED`).
 - **404 Not Found:** Solicitud no encontrada, usuario no participante o mensaje de referencia (`before`) no existe.
 
 ---
@@ -917,14 +927,16 @@ Content-Type: application/json
 | Campo | Tipo | Requerido | Descripción |
 | :--- | :--- | :--- | :--- |
 | `contenido` | string | Sí | Texto del mensaje (se recortan espacios; longitud 1 a 1000 caracteres). |
+| `idempotencyKey` | string | No | Clave de idempotencia (máximo 36 caracteres, ej. UUID). Si ya existe un mensaje con esa clave en la misma solicitud, responde **200 OK** con el mensaje existente sin duplicarlo. |
 
 **Reglas de negocio:**
 - Si `contenido` no se envía, no es texto, está vacío o supera los 1000 caracteres: **400 Bad Request**.
+- Si `idempotencyKey` se envía pero no es string o supera 36 caracteres: **400 Bad Request**.
 - Si el usuario no es participante o la solicitud no existe: **404 Not Found**.
 - Si el chat no está disponible (`PENDING`, `CANCELLED` o `EXPIRED`): **403 Forbidden** con el motivo.
 - Si el servicio finalizó (`COMPLETED` / `chat.soloLectura === true`): **409 Conflict** con `"El servicio finalizó; el chat es solo de lectura"`.
 
-**Respuesta 201 Created:**
+**Respuesta 201 Created** (o **200 OK** si ya existía por `idempotencyKey`):
 ```json
 {
   "id": "8c59f201-9031-41ae-ba5a-19e0cf558fa3",
@@ -935,7 +947,8 @@ Content-Type: application/json
   "createdAt": "2026-10-22T20:18:00.000Z",
   "senderId": "9837e9b0-0093-4ab1-9851-465a7031a941",
   "senderRole": "WORKER",
-  "esMio": true
+  "esMio": true,
+  "leido": false
 }
 ```
 
@@ -976,9 +989,12 @@ Content-Type: multipart/form-data
   "createdAt": "2026-11-20T05:45:00.000Z",
   "senderId": "3339f0ad-83a2-4f82-becb-82225d6a7489",
   "senderRole": "CLIENT",
-  "esMio": true
+  "esMio": true,
+  "leido": false
 }
 ```
+
+> También acepta el campo opcional `idempotencyKey` (string, máximo 36 caracteres) en el `FormData` para evitar duplicados ante reintentos; si ya existe un mensaje con esa clave en la misma solicitud, responde **200 OK** con el mensaje existente sin volver a subir la imagen.
 
 **Errores:**
 - **400 Bad Request:** Falta el archivo en el campo `imagen` o `contenido` supera los 1000 caracteres.
@@ -989,6 +1005,31 @@ Content-Type: multipart/form-data
 - **413 Payload Too Large:** La imagen supera el límite máximo de 5 MB.
 - **415 Unsupported Media Type:** El contenido real del archivo (magic bytes) no corresponde a JPEG, PNG o WebP.
 - **502 Bad Gateway:** Fallo al subir la imagen a Supabase Storage (no se crea el mensaje).
+
+---
+
+### 4.9.1 Marcar mensajes del chat como leídos
+```
+PATCH /api/requests/:id/messages/read
+```
+
+Disponible para el cliente dueño o el técnico asignado (`authenticate`). Marca como leídos (`readAt = now()`) todos los mensajes de la solicitud enviados por el otro participante (`senderId !== userId` y `readAt === null`) y emite el evento `chat:read` por Socket.io a la sala `request:<requestId>`.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Respuesta 200 OK:**
+```json
+{
+  "leidos": 3
+}
+```
+
+**Errores:**
+- **401 Unauthorized:** Token no proporcionado o expirado.
+- **404 Not Found:** Solicitud no encontrada o el usuario no es participante.
 
 ---
 
@@ -1035,12 +1076,24 @@ const socket = io("https://proxihogar-backend.onrender.com", {
      "archivo": null,
      "createdAt": "2026-10-22T20:18:00.000Z",
      "senderId": "9837e9b0-0093-4ab1-9851-465a7031a941",
-     "senderRole": "WORKER"
+     "senderRole": "WORKER",
+     "leido": false
    }
    ```
    > **Cálculo de `esMio`:** Como el evento se transmite a toda la sala, cada cliente calcula localmente si el mensaje es suyo comparando: `esMio = msg.senderId === usuarioActual.id`.
 
-2. **`request:status`** (Cambio de estado del servicio):
+2. **`chat:read`** (Mensajes marcados como leídos):
+   Se emite automáticamente tras ejecutar `PATCH /api/requests/:id/messages/read` cuando un participante marca mensajes como leídos.
+   ```json
+   {
+     "requestId": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
+     "readBy": "3339f0ad-83a2-4f82-becb-82225d6a7489",
+     "readAt": "2026-11-20T08:40:00.000Z",
+     "count": 3
+   }
+   ```
+
+3. **`request:status`** (Cambio de estado del servicio):
    Se emite automáticamente cuando se actualiza el estado de la solicitud vía `PATCH /api/requests/:id/status`.
    ```json
    {
