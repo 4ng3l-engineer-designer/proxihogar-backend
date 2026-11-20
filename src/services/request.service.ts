@@ -27,6 +27,7 @@ import { buildEstadoResponse } from "../utils/requestStatus";
 import { getChatAccess, getInitials } from "../utils/chatAccess";
 import { emitChatMessage, emitRequestStatus } from "../realtime/socket";
 import { routingService } from "./routing.service";
+import { mapOrdenTrabajoResumen } from "./workOrder.service";
 import {
   createSignedStorageUrl,
   deleteFromStorage,
@@ -362,6 +363,7 @@ export class RequestService {
         statusLogs: r.statusLogs,
       }),
       chat: getChatAccess(r.status),
+      ordenTrabajo: r.workOrder ? mapOrdenTrabajoResumen(r.workOrder) : null,
     };
   }
 
@@ -664,6 +666,10 @@ export class RequestService {
     return request;
   }
 
+  mapRequestToResponse(request: RequestWithTechnician): RequestResponse {
+    return this.mapToResponse(request);
+  }
+
   private mapToResponse(request: RequestWithTechnician): RequestResponse {
     const tech = request.technician;
 
@@ -718,6 +724,7 @@ export class RequestService {
         statusLogs: request.statusLogs,
       }),
       chat: getChatAccess(request.status),
+      ordenTrabajo: request.workOrder ? mapOrdenTrabajoResumen(request.workOrder) : null,
     };
   }
 }

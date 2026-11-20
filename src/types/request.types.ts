@@ -1,5 +1,6 @@
 // src/types/request.types.ts
 import { RequestStatus } from "@prisma/client";
+import { OrdenTrabajoResumen } from "./workOrder.types";
 
 export interface CreateRequestDto {
   technicianId: string;
@@ -78,6 +79,7 @@ export interface RequestResponse {
   cliente?: ClienteSolicitudResponse;
   estado: EstadoSolicitudResponse;
   chat: ChatAccessInfo;
+  ordenTrabajo: OrdenTrabajoResumen | null;
 }
 
 export interface ClienteSolicitudResponse {
@@ -99,6 +101,7 @@ export interface WorkerRequestResponse {
   cliente: ClienteSolicitudResponse;
   estado: EstadoSolicitudResponse;
   chat: ChatAccessInfo;
+  ordenTrabajo: OrdenTrabajoResumen | null;
 }
 
 export interface ContraparteChatResponse {

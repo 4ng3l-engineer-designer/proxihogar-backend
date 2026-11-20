@@ -2,11 +2,13 @@
 import { Router } from "express";
 import { Role } from "@prisma/client";
 import { RequestController } from "../controllers/request.controller";
+import { WorkOrderController } from "../controllers/workOrder.controller";
 import { authenticate, requireRole } from "../middlewares/auth.middleware";
 import { uploadChatImage } from "../middlewares/upload.middleware";
 
 const router = Router();
 const requestController = new RequestController();
+const workOrderController = new WorkOrderController();
 
 // Todas las rutas requieren autenticación
 router.use(authenticate);
@@ -22,6 +24,12 @@ router.get("/:id/chat", requestController.getChatAccess);
 router.get("/:id/messages", requestController.getMessages);
 router.post("/:id/messages/image", uploadChatImage, requestController.createImageMessage);
 router.post("/:id/messages", requestController.createMessage);
+
+// Orden de trabajo y pago (C56)
+router.post("/:id/work-order", requireRole(Role.WORKER), workOrderController.create);
+router.patch("/:id/work-order/send", requireRole(Role.WORKER), workOrderController.send);
+router.get("/:id/work-order", workOrderController.getByRequestId);
+router.post("/:id/work-order/pay", requireRole(Role.CLIENT), workOrderController.pay);
 
 // Ruta en tiempo real hacia el domicilio (solo CLIENT dueño; otros reciben 404)
 router.get("/:id/route", requestController.getRoute);

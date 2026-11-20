@@ -150,3 +150,15 @@ export function emitTechnicianLocation(
     io.to(`request:${requestId}`).emit("technician:location", payload);
   }
 }
+
+export function emitWorkOrderSent(requestId: string, workOrder: any): void {
+  if (io) {
+    io.to(`request:${requestId}`).emit("workorder:sent", workOrder);
+  }
+}
+
+export function emitWorkOrderPaid(requestId: string, payload: any): void {
+  if (io) {
+    io.to(`request:${requestId}`).emit("workorder:paid", payload);
+  }
+}

@@ -32,6 +32,19 @@ enum MessageType {
   IMAGE
 }
 
+enum PaymentMethod {
+  EFECTIVO
+  YAPE
+  PLIN
+  TRANSFERENCIA
+}
+
+enum WorkOrderStatus {
+  DRAFT
+  SENT
+  PAID
+}
+
 // ── USUARIO Y AUTENTICACIÓN ──
 
 model User {
@@ -169,6 +182,7 @@ model Request {
   technician    Technician         @relation(fields: [technicianId], references: [id], onDelete: Cascade)
   statusLogs    RequestStatusLog[]
   messages      Message[]
+  workOrder     WorkOrder?
 
   @@map("requests")
 }
@@ -211,4 +225,25 @@ model Message {
 
   @@index([requestId, createdAt])
   @@map("messages")
+}
+
+// ── ORDEN DE TRABAJO Y PAGO (C56) ──
+
+model WorkOrder {
+  id               String          @id @default(uuid())
+  requestId        String          @unique
+  manoDeObra       Float
+  items            Json
+  total            Float
+  status           WorkOrderStatus @default(DRAFT)
+  paymentMethod    PaymentMethod?
+  paymentReference String?
+  paidAt           DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  // Relaciones
+  request          Request         @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@map("work_orders")
 }

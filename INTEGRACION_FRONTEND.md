@@ -1702,6 +1702,20 @@ export async function enviarImagenChat(
 
 ---
 
+## Pago y finalización (C56)
+
+Cuando el servicio está en `IN_PROGRESS`, el técnico puede emitir una orden de trabajo detallada y el cliente registra el pago para finalizar automáticamente el servicio.
+
+1. **Técnico (`WORKER`):**
+   - Crea el borrador con `POST /api/requests/:id/work-order` (`manoDeObra` e `items`). El servidor calcula el `total`.
+   - Envía la orden al cliente con `PATCH /api/requests/:id/work-order/send` (`DRAFT` → `SENT`). Mientras exista una orden en `SENT`, el técnico no puede marcar manualmente el servicio como `COMPLETED` (`409`).
+2. **Cliente (`CLIENT`):**
+   - Al recibir el evento Socket.io `workorder:sent` (o al consultar `GET /api/requests/:id` / `GET /api/requests/:id/work-order`), muestra el desglose (`manoDeObra`, `items` y `totalTexto` como `"S/ 85.00"`).
+   - Selecciona el método de pago (`EFECTIVO`, `YAPE`, `PLIN` o `TRANSFERENCIA`) y opcionalmente `paymentReference` (número de operación, máx. 50 caracteres), enviando `POST /api/requests/:id/work-order/pay`.
+   - Al confirmarse el pago (`200`), la orden pasa a `PAID`, la solicitud pasa automáticamente a `COMPLETED` y se emiten `workorder:paid` y `request:status` por Socket.io.
+
+---
+
 ## Paso 8: Estados de la pantalla
 
 Maneja siempre los 4 estados principales de visualización:

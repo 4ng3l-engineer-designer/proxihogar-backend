@@ -486,8 +486,9 @@ Endpoint público (sin autenticación). Devuelve la coordenada por defecto de Li
 ## 4. Solicitudes de servicio (C33 - Seguimiento)
 
 Todas las rutas bajo `/api/requests` requieren autenticación con token Bearer (`authenticate`).
-- Creación, listado, detalle y ruta (`POST /api/requests`, `GET /api/requests`, `GET /api/requests/:id`, `GET /api/requests/:id/route`): exclusivos del cliente dueño (`CLIENT`).
-- Cambio de estado, acceso al chat y mensajes (`PATCH /api/requests/:id/status`, `GET /api/requests/:id/chat`, `GET/POST /api/requests/:id/messages`, `POST /api/requests/:id/messages/image`): disponibles tanto para el cliente dueño (`CLIENT`) como para el técnico asignado (`WORKER`).
+- Creación, listado, detalle y ruta (`POST /api/requests`, `GET /api/requests`, `GET /api/requests/:id`, `GET /api/requests/:id/route`, `POST /api/requests/:id/work-order/pay`): exclusivos del cliente dueño (`CLIENT`).
+- Órdenes de trabajo del técnico (`POST /api/requests/:id/work-order`, `PATCH /api/requests/:id/work-order/send`): exclusivos del técnico asignado (`WORKER`).
+- Cambio de estado, acceso al chat, mensajes y consulta de orden (`PATCH /api/requests/:id/status`, `GET /api/requests/:id/chat`, `GET/POST /api/requests/:id/messages`, `POST /api/requests/:id/messages/image`, `GET /api/requests/:id/work-order`): disponibles tanto para el cliente dueño (`CLIENT`) como para el técnico asignado (`WORKER`).
 - El `clientId` o `userId` se toma siempre del token JWT del usuario autenticado.
 
 Header requerido:
@@ -1066,6 +1067,72 @@ Calcula la ruta vehicular desde la última posición registrada del técnico has
 **Errores:**
 - **401 Unauthorized:** Token no proporcionado o inválido.
 - **404 Not Found:** La solicitud no existe o el usuario autenticado no es el cliente dueño.
+
+---
+
+### 4.12 Orden de trabajo y pago (C56)
+
+Todas las respuestas de solicitudes (`GET /api/requests/:id`, `GET /api/technicians/me/requests/:id`, etc.) incluyen el campo `ordenTrabajo` (`null` si aún no se creó, o `{ id, manoDeObra, items, total, totalTexto, moneda, status, paymentMethod, paymentReference, paidAt }`).
+
+**Regla de completado:** Si la solicitud tiene una orden de trabajo en estado `SENT` (pendiente de pago), el técnico **no** puede pasar manualmente de `IN_PROGRESS` a `COMPLETED` (`409`: `"El servicio tiene una orden de trabajo pendiente de pago. El cliente debe registrar el pago primero."`). El servicio pasa a `COMPLETED` automáticamente cuando el cliente registra el pago. Si la solicitud no tiene orden de trabajo, el técnico puede completarla manualmente como antes.
+
+#### 4.12.1 Crear orden de trabajo (borrador)
+```
+POST /api/requests/:id/work-order
+```
+Protegido con `authenticate` y `requireRole("WORKER")` (técnico asignado). Solo permitido cuando la solicitud está en `IN_PROGRESS` y aún no tiene orden.
+
+**Body (JSON):**
+```json
+{
+  "manoDeObra": 50,
+  "items": [
+    { "descripcion": "Cambio de llave", "cantidad": 1, "precioUnitario": 25 },
+    { "descripcion": "Cinta aislante", "cantidad": 2, "precioUnitario": 5 }
+  ]
+}
+```
+- `manoDeObra >= 0`; `items` no vacío (`descripcion` no vacía, `cantidad > 0`, `precioUnitario >= 0`).
+- `total` se calcula en el servidor (`manoDeObra + suma(cantidad * precioUnitario)`). Se crea en estado `DRAFT`.
+
+**Respuesta 201 Created:** Orden completa (`id`, `requestId`, `manoDeObra`, `items`, `total`, `totalTexto`, `tarifaTexto`, `moneda: "PEN"`, `status: "DRAFT"`, `paymentMethod: null`, `paymentReference: null`, `paidAt: null`, `createdAt`, `updatedAt`).
+
+**Errores:** `400` (validación), `401`, `403`, `404`, `409` (no está en `IN_PROGRESS` o ya existe orden).
+
+#### 4.12.2 Enviar orden al cliente
+```
+PATCH /api/requests/:id/work-order/send
+```
+Protegido con `authenticate` y `requireRole("WORKER")` (técnico asignado). Pasa la orden de `DRAFT` a `SENT` y emite `workorder:sent` por Socket.io a `request:<id>`.
+
+**Respuesta 200 OK:** Orden actualizada con `status: "SENT"`.  
+**Errores:** `401`, `403`, `404`, `409` (si la orden no está en `DRAFT`).
+
+#### 4.12.3 Consultar orden de trabajo
+```
+GET /api/requests/:id/work-order
+```
+Protegido con `authenticate` (cliente dueño o técnico asignado).
+
+**Respuesta 200 OK:** Orden completa incluyendo `tarifaTexto` (`formatTarifa(total)`) y `moneda: "PEN"`.  
+**Errores:** `401`, `404` (si no existe la solicitud, no es participante o no existe orden).
+
+#### 4.12.4 Registrar pago y finalizar servicio
+```
+POST /api/requests/:id/work-order/pay
+```
+Protegido con `authenticate` y `requireRole("CLIENT")` (cliente dueño). Solo permitido si la orden está en `SENT`.
+
+**Body (JSON):**
+| Campo | Tipo | Requerido | Descripción |
+| :--- | :--- | :--- | :--- |
+| `paymentMethod` | string | Sí | `"EFECTIVO"`, `"YAPE"`, `"PLIN"` o `"TRANSFERENCIA"` |
+| `paymentReference` | string | No | Número de operación (máx. 50 caracteres) |
+
+**Efecto transaccional:** Actualiza la orden a `PAID` (`paymentMethod`, `paymentReference`, `paidAt = now()`) y cambia la solicitud de `IN_PROGRESS` a `COMPLETED` registrando `RequestStatusLog`. Emite `workorder:paid` y `request:status` por Socket.io.
+
+**Respuesta 200 OK:** `{ "orden": { ... }, "solicitud": { ... } }`.  
+**Errores:** `400` (`paymentMethod` inválido o `paymentReference > 50`), `401`, `403`, `404`, `409` (orden no está en `SENT`).
 
 ---
 

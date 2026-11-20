@@ -1,6 +1,6 @@
 // src/repositories/request.repository.ts
 import { prisma } from "../utils/prisma";
-import { Prisma, RequestStatus, Role } from "@prisma/client";
+import { Prisma, RequestStatus, Role, WorkOrderStatus } from "@prisma/client";
 import { HttpError } from "../utils/errors";
 import { isSystemTransitionAllowed, isTransitionAllowed } from "../utils/requestStatus";
 
@@ -27,6 +27,7 @@ export type RequestWithTechnician = Prisma.RequestGetPayload<{
         createdAt: "asc";
       };
     };
+    workOrder: true;
   };
 }>;
 
@@ -49,6 +50,7 @@ export type WorkerRequestWithClient = Prisma.RequestGetPayload<{
         createdAt: "asc";
       };
     };
+    workOrder: true;
   };
 }>;
 
@@ -104,6 +106,7 @@ export class RequestRepository {
             createdAt: "asc",
           },
         },
+        workOrder: true,
       },
     });
   }
@@ -134,6 +137,7 @@ export class RequestRepository {
             createdAt: "asc",
           },
         },
+        workOrder: true,
       },
     });
   }
@@ -163,6 +167,7 @@ export class RequestRepository {
             createdAt: "asc",
           },
         },
+        workOrder: true,
       },
     });
   }
@@ -240,6 +245,25 @@ export class RequestRepository {
         }
       }
 
+      // Si el técnico intenta pasar manualmente a COMPLETED y existe orden SENT, bloquear hasta que pague el cliente
+      if (
+        userRole === Role.WORKER &&
+        current.status === RequestStatus.IN_PROGRESS &&
+        nextStatus === RequestStatus.COMPLETED
+      ) {
+        const pendingOrder = await tx.workOrder.findUnique({
+          where: { requestId: id },
+          select: { status: true },
+        });
+
+        if (pendingOrder && pendingOrder.status === WorkOrderStatus.SENT) {
+          throw new HttpError(
+            409,
+            "El servicio tiene una orden de trabajo pendiente de pago. El cliente debe registrar el pago primero."
+          );
+        }
+      }
+
       await tx.requestStatusLog.create({
         data: {
           requestId: id,
@@ -277,6 +301,7 @@ export class RequestRepository {
               createdAt: "asc",
             },
           },
+          workOrder: true,
         },
       });
 
@@ -430,6 +455,7 @@ export class RequestRepository {
             createdAt: "asc",
           },
         },
+        workOrder: true,
       },
     });
   }
@@ -456,6 +482,7 @@ export class RequestRepository {
             createdAt: "asc",
           },
         },
+        workOrder: true,
       },
     });
   }
