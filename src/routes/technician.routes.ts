@@ -32,6 +32,13 @@ router.patch(
   technicianController.updateDisponibilidad
 );
 
+router.post(
+  "/me/location",
+  authenticate,
+  requireRole(Role.WORKER),
+  technicianController.updateLocation
+);
+
 router.patch(
   "/me",
   authenticate,

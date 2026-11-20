@@ -243,4 +243,23 @@ export class TechnicianController {
       });
     }
   };
+
+  updateLocation = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user!.id;
+      const { latitude, longitude } = req.body;
+
+      const result = await this.technicianService.updateMyLocation(userId, latitude, longitude);
+      res.status(200).json(result);
+    } catch (error) {
+      if (error instanceof HttpError) {
+        res.status(error.statusCode).json({ error: error.message });
+        return;
+      }
+      console.error("Error al actualizar ubicación del técnico:", error);
+      res.status(500).json({
+        error: "Ocurrió un error interno al procesar la solicitud.",
+      });
+    }
+  };
 }

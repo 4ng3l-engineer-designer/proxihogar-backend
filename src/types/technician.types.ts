@@ -79,6 +79,12 @@ export interface UpdateTechnicianProfileDto {
   fotoUrl?: string | null;
 }
 
+export interface UpdateLocationResponse {
+  latitude: number;
+  longitude: number;
+  updatedAt: Date;
+}
+
 export interface NearbyQueryParams {
   lat: number;
   lng: number;

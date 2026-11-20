@@ -348,6 +348,43 @@ Protegido con `authenticate` y `requireRole("WORKER")`.
 
 ---
 
+### 2.7 Enviar ubicación en tiempo real del técnico (C30)
+```
+POST /api/technicians/me/location
+```
+
+Protegido con `authenticate` y `requireRole("WORKER")`. Guarda la posición actual del técnico mientras tiene una solicitud activa en estado `ON_THE_WAY` y emite el evento `technician:location` por Socket.io a la sala `request:<requestId>`.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Body (JSON):**
+| Campo | Tipo | Requerido | Descripción |
+| :--- | :--- | :--- | :--- |
+| `latitude` | number | Sí | Latitud válida (`-90` a `90`) |
+| `longitude` | number | Sí | Longitud válida (`-180` a `180`) |
+
+**Respuesta 200 OK:**
+```json
+{
+  "latitude": -12.2745,
+  "longitude": -76.8711,
+  "updatedAt": "2026-11-20T05:25:00.000Z"
+}
+```
+
+**Errores:**
+- **400 Bad Request:** `latitude` o `longitude` faltantes, no numéricos o fuera de rango.
+- **401 Unauthorized:** Token no proporcionado o inválido.
+- **403 Forbidden:** El usuario no posee el rol `WORKER`.
+- **409 Conflict:** `"Solo puedes enviar tu ubicación mientras vas en camino a un servicio."` (cuando el técnico no tiene ninguna solicitud en `ON_THE_WAY`).
+- **429 Too Many Requests:** `"Espera unos segundos antes de enviar otra ubicación."` (límite de 1 envío cada 5 segundos por técnico; no se guarda ni se emite por socket).
+
+---
+
 ## 3. Distritos y coordenadas de referencia (C28 - Mapa)
 
 ```
@@ -803,6 +840,75 @@ const socket = io("https://proxihogar-backend-production.up.railway.app", {
      }
    }
    ```
+
+3. **`technician:location`** (Ubicación en tiempo real del técnico — C30):
+   Se emite automáticamente a la sala `request:<requestId>` cuando el técnico actualiza su posición vía `POST /api/technicians/me/location` mientras está en `ON_THE_WAY`. Solo transporta la posición (no incluye la polilínea de la ruta).
+   ```json
+   {
+     "requestId": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
+     "latitude": -12.2745,
+     "longitude": -76.8711,
+     "updatedAt": "2026-11-20T05:25:00.000Z"
+   }
+   ```
+
+---
+
+### 4.7 Ruta hacia el domicilio en tiempo real (C30)
+```
+GET /api/requests/:id/route
+```
+
+Protegido con `authenticate`. Accesible **únicamente para el cliente dueño** de la solicitud (cualquier otro usuario, incluyendo técnicos, recibe `404 Not Found`).
+
+Calcula la ruta vehicular desde la última posición registrada del técnico hasta el domicilio de la solicitud usando el servidor **OSRM público** (`router.project-osrm.org`), con caché en memoria por solicitud (se recalcula únicamente si el técnico se movió más de 50 metros o pasaron más de 15 segundos; la caché se limpia al salir de `ON_THE_WAY`).
+
+> **Nota de disponibilidad:** El cálculo de ruta utiliza la instancia pública de OSRM sin garantía de disponibilidad ni SLA. Ante timeouts (> 4 s) o fallos del servicio externo, el endpoint nunca devuelve error `500`: responde `200 OK` con `estado: "RUTA_NO_DISPONIBLE"` y las coordenadas de ambos marcadores para que la app pueda seguir mostrándolos en el mapa.
+
+**Respuestas `200 OK` según el estado:**
+
+1. **`NO_EN_CAMINO`** (la solicitud no está en `ON_THE_WAY`):
+   ```json
+   {
+     "estado": "NO_EN_CAMINO",
+     "mensaje": "El técnico no está en camino."
+   }
+   ```
+2. **`SIN_UBICACION`** (la solicitud está en `ON_THE_WAY`, pero el técnico aún no ha enviado su posición):
+   ```json
+   {
+     "estado": "SIN_UBICACION",
+     "mensaje": "El técnico aún no comparte su ubicación."
+   }
+   ```
+3. **`RUTA_NO_DISPONIBLE`** (existe posición, pero OSRM falló o demoró más de 4 s):
+   ```json
+   {
+     "estado": "RUTA_NO_DISPONIBLE",
+     "mensaje": "No pudimos calcular la ruta en este momento.",
+     "tecnico": { "latitude": -12.2745, "longitude": -76.8711, "updatedAt": "2026-11-20T05:25:00.000Z" },
+     "domicilio": { "latitude": -12.1219, "longitude": -77.0297 }
+   }
+   ```
+4. **`OK`** (ruta calculada o servida desde caché):
+   ```json
+   {
+     "estado": "OK",
+     "tecnico": { "latitude": -12.2745, "longitude": -76.8711, "updatedAt": "2026-11-20T05:25:00.000Z" },
+     "domicilio": { "latitude": -12.1219, "longitude": -77.0297 },
+     "ruta": [
+       [-12.2745, -76.8711],
+       [-12.2701, -76.8754]
+     ],
+     "distanciaMetros": 25400.5,
+     "duracionSegundos": 1980.2,
+     "calculadoEn": "2026-11-20T05:25:05.000Z"
+   }
+   ```
+
+**Errores:**
+- **401 Unauthorized:** Token no proporcionado o inválido.
+- **404 Not Found:** La solicitud no existe o el usuario autenticado no es el cliente dueño.
 
 ---
 

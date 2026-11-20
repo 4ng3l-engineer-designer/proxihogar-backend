@@ -10,6 +10,7 @@ import {
   EstadoSolicitudResponse,
   HistorialEstadoItem,
   RequestResponse,
+  RequestRouteResponse,
   TecnicoAsignadoResponse,
   WorkerRequestResponse,
 } from "../types/request.types";
@@ -20,6 +21,7 @@ import { formatTarifa, MONEDA } from "../utils/currency";
 import { isTransitionAllowed, STATUS_CONFIG, TOTAL_PASOS } from "../utils/requestStatus";
 import { getChatAccess, getInitials } from "../utils/chatAccess";
 import { emitChatMessage, emitRequestStatus } from "../realtime/socket";
+import { routingService } from "./routing.service";
 
 export class RequestService {
   constructor(
@@ -176,7 +178,12 @@ export class RequestService {
 
     const mappedResponse = this.mapToResponse(updatedRequest);
 
-    // 5. Emitir cambio de estado a la sala de Socket.io
+    // 5. Si la solicitud salió de ON_THE_WAY, limpiar la caché de ruta
+    if (request.status === RequestStatus.ON_THE_WAY && nextStatus !== RequestStatus.ON_THE_WAY) {
+      routingService.clearRouteCache(id);
+    }
+
+    // 6. Emitir cambio de estado a la sala de Socket.io
     emitRequestStatus(id, {
       requestId: mappedResponse.id,
       status: mappedResponse.status,
@@ -185,6 +192,87 @@ export class RequestService {
     });
 
     return mappedResponse;
+  }
+
+  async getRequestRoute(requestId: string, userId: string): Promise<RequestRouteResponse> {
+    const request = await this.requestRepository.findById(requestId);
+
+    // Solo el cliente dueño puede consultar la ruta; otros reciben 404
+    if (!request || request.clientId !== userId) {
+      throw new HttpError(404, "Solicitud no encontrada.");
+    }
+
+    if (request.status !== RequestStatus.ON_THE_WAY) {
+      return {
+        estado: "NO_EN_CAMINO",
+        mensaje: "El técnico no está en camino.",
+      };
+    }
+
+    const tech = request.technician;
+    if (
+      tech.ubicacionActualLat === null ||
+      tech.ubicacionActualLat === undefined ||
+      tech.ubicacionActualLng === null ||
+      tech.ubicacionActualLng === undefined ||
+      !tech.ubicacionActualAt
+    ) {
+      return {
+        estado: "SIN_UBICACION",
+        mensaje: "El técnico aún no comparte su ubicación.",
+      };
+    }
+
+    const tecnicoPos = {
+      latitude: tech.ubicacionActualLat,
+      longitude: tech.ubicacionActualLng,
+      updatedAt: tech.ubicacionActualAt,
+    };
+
+    if (request.latitude === null || request.longitude === null) {
+      return {
+        estado: "RUTA_NO_DISPONIBLE",
+        mensaje: "No pudimos calcular la ruta en este momento.",
+        tecnico: tecnicoPos,
+        domicilio: {
+          latitude: request.latitude,
+          longitude: request.longitude,
+        },
+      };
+    }
+
+    const routeResult = await routingService.getRouteForRequest(
+      request.id,
+      tecnicoPos.latitude,
+      tecnicoPos.longitude,
+      request.latitude,
+      request.longitude
+    );
+
+    if (!routeResult) {
+      return {
+        estado: "RUTA_NO_DISPONIBLE",
+        mensaje: "No pudimos calcular la ruta en este momento.",
+        tecnico: tecnicoPos,
+        domicilio: {
+          latitude: request.latitude,
+          longitude: request.longitude,
+        },
+      };
+    }
+
+    return {
+      estado: "OK",
+      tecnico: tecnicoPos,
+      domicilio: {
+        latitude: request.latitude,
+        longitude: request.longitude,
+      },
+      ruta: routeResult.ruta,
+      distanciaMetros: routeResult.distanciaMetros,
+      duracionSegundos: routeResult.duracionSegundos,
+      calculadoEn: routeResult.calculadoEn,
+    };
   }
 
   async getWorkerRequests(userId: string): Promise<WorkerRequestResponse[]> {

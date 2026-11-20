@@ -1,19 +1,28 @@
 // src/services/technician.service.ts
 import { TechnicianRepository, TechnicianWithReviews } from "../repositories/technician.repository";
+import { RequestRepository } from "../repositories/request.repository";
 import {
   NearbyQueryParams,
   TecnicoOwnProfileResponse,
   TecnicoProfileResponse,
   TecnicoResponse,
+  UpdateLocationResponse,
   UpdateTechnicianProfileDto,
 } from "../types/technician.types";
 import { calculateHaversineDistance, estimateArrivalTime, formatDistance } from "../utils/haversine";
 import { formatTarifa, MONEDA } from "../utils/currency";
 import { HttpError } from "../utils/errors";
+import { emitTechnicianLocation } from "../realtime/socket";
 import { Prisma } from "@prisma/client";
 
+const LOCATION_THROTTLE_MS = 5000;
+const lastLocationSentAt = new Map<string, number>();
+
 export class TechnicianService {
-  constructor(private readonly technicianRepository = new TechnicianRepository()) {}
+  constructor(
+    private readonly technicianRepository = new TechnicianRepository(),
+    private readonly requestRepository = new RequestRepository()
+  ) {}
 
   async getNearbyTechnicians(params: NearbyQueryParams): Promise<TecnicoResponse[]> {
     const { lat, lng, radiusKm, especialidad, verificado, calificacionMin, tarifaMax } = params;
@@ -310,6 +319,90 @@ export class TechnicianService {
       disponible: disponibleInput,
     });
     return this.mapOwnProfile(updated);
+  }
+
+  async updateMyLocation(
+    userId: string,
+    latitudeInput: unknown,
+    longitudeInput: unknown
+  ): Promise<UpdateLocationResponse> {
+    if (
+      latitudeInput === undefined ||
+      latitudeInput === null ||
+      longitudeInput === undefined ||
+      longitudeInput === null
+    ) {
+      throw new HttpError(400, "Los campos 'latitude' y 'longitude' son obligatorios y deben enviarse juntos.");
+    }
+
+    if (
+      typeof latitudeInput !== "number" ||
+      typeof longitudeInput !== "number" ||
+      !Number.isFinite(latitudeInput) ||
+      !Number.isFinite(longitudeInput)
+    ) {
+      throw new HttpError(400, "Los campos 'latitude' y 'longitude' deben ser números válidos.");
+    }
+
+    if (
+      latitudeInput < -90 ||
+      latitudeInput > 90 ||
+      longitudeInput < -180 ||
+      longitudeInput > 180
+    ) {
+      throw new HttpError(
+        400,
+        "Coordenadas fuera de rango válido (-90 a 90 para latitude, -180 a 180 para longitude)."
+      );
+    }
+
+    const tech = await this.technicianRepository.findByUserId(userId);
+    if (!tech) {
+      throw new HttpError(404, "Perfil de técnico no encontrado.");
+    }
+
+    // Buscar solicitud activa del técnico en ON_THE_WAY
+    const activeOnTheWay = await this.requestRepository.findActiveOnTheWayByTechnicianId(tech.id);
+    if (!activeOnTheWay) {
+      throw new HttpError(
+        409,
+        "Solo puedes enviar tu ubicación mientras vas en camino a un servicio."
+      );
+    }
+
+    // Límite de frecuencia: máximo 1 posición cada 5 segundos por técnico
+    const nowMs = Date.now();
+    const lastMemMs = lastLocationSentAt.get(tech.id) ?? 0;
+    const lastDbMs = tech.ubicacionActualAt ? tech.ubicacionActualAt.getTime() : 0;
+    const lastMs = Math.max(lastMemMs, lastDbMs);
+
+    if (lastMs > 0 && nowMs - lastMs < LOCATION_THROTTLE_MS) {
+      throw new HttpError(429, "Espera unos segundos antes de enviar otra ubicación.");
+    }
+
+    const updatedAt = new Date(nowMs);
+    await this.technicianRepository.updateCurrentLocation(
+      tech.id,
+      latitudeInput,
+      longitudeInput,
+      updatedAt
+    );
+
+    lastLocationSentAt.set(tech.id, nowMs);
+
+    // Emitir posición por Socket.io a la sala de la solicitud
+    emitTechnicianLocation(activeOnTheWay.id, {
+      requestId: activeOnTheWay.id,
+      latitude: latitudeInput,
+      longitude: longitudeInput,
+      updatedAt,
+    });
+
+    return {
+      latitude: latitudeInput,
+      longitude: longitudeInput,
+      updatedAt,
+    };
   }
 
   private mapOwnProfile(tech: TechnicianWithReviews): TecnicoOwnProfileResponse {

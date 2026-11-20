@@ -170,4 +170,21 @@ export class RequestController {
       });
     }
   };
+
+  getRoute = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user!.id;
+      const result = await this.requestService.getRequestRoute(req.params.id, userId);
+      res.status(200).json(result);
+    } catch (error) {
+      if (error instanceof HttpError) {
+        res.status(error.statusCode).json({ error: error.message });
+        return;
+      }
+      console.error("Error al obtener ruta de la solicitud:", error);
+      res.status(500).json({
+        error: "Ocurrió un error interno al procesar la solicitud.",
+      });
+    }
+  };
 }

@@ -377,6 +377,18 @@ export class RequestRepository {
     return expiredList;
   }
 
+  async findActiveOnTheWayByTechnicianId(technicianId: string): Promise<{ id: string } | null> {
+    return prisma.request.findFirst({
+      where: {
+        technicianId,
+        status: RequestStatus.ON_THE_WAY,
+      },
+      select: {
+        id: true,
+      },
+    });
+  }
+
   async findByTechnicianId(technicianId: string): Promise<WorkerRequestWithClient[]> {
     return prisma.request.findMany({
       where: { technicianId },

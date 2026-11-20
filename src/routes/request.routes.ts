@@ -21,6 +21,9 @@ router.get("/:id/chat", requestController.getChatAccess);
 router.get("/:id/messages", requestController.getMessages);
 router.post("/:id/messages", requestController.createMessage);
 
+// Ruta en tiempo real hacia el domicilio (solo CLIENT dueño; otros reciben 404)
+router.get("/:id/route", requestController.getRoute);
+
 // Detalle de solicitud (CLIENT)
 router.get("/:id", requireRole(Role.CLIENT), requestController.getById);
 

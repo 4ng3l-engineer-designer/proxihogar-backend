@@ -1558,6 +1558,48 @@ Cuando un usuario se registra con `role: "WORKER"` en `POST /api/auth/register`,
 
 ---
 
+## Seguimiento en mapa (C30)
+
+Cuando el servicio se encuentra en estado `ON_THE_WAY`, el técnico envía su ubicación GPS periódicamente a `POST /api/technicians/me/location` (máximo 1 vez cada 5 segundos) y el cliente visualiza su desplazamiento y la ruta hacia el domicilio mediante `GET /api/requests/:id/route` y el evento de Socket.io `technician:location`.
+
+### 1. Cuándo consultar `GET /api/requests/:id/route`
+
+Para evitar sobrecargar el servicio de rutas y mantener una experiencia fluida:
+1. **Al entrar a la pantalla de seguimiento** (si `solicitud.status === "ON_THE_WAY"`).
+2. **Al recibir el evento `technician:location` por Socket.io:**
+   - Actualiza inmediatamente la posición del marcador del técnico en el mapa usando `{ latitude, longitude }` del evento.
+   - Llama a `GET /api/requests/:id/route` respetando un **intervalo mínimo de 15 segundos** respecto a la última consulta (el backend además cachea la ruta por 15 segundos / 50 metros).
+3. **Respaldo periódico cada 30 segundos:**
+   - Configura un `setInterval` cada **30 segundos** mientras la pantalla esté abierta y la solicitud siga en `ON_THE_WAY`, para refrescar la ruta incluso si se interrumpe temporalmente el socket.
+
+### 2. Cómo dibujar la polilínea en el mapa
+
+El campo `ruta` devuelto cuando `estado === "OK"` viene como un arreglo de pares `[lat, lng]`. Para renderizarlo con `<Polyline>` de `react-native-maps`:
+
+```tsx
+const polylineCoords = routeData.ruta.map(([latitude, longitude]) => ({
+  latitude,
+  longitude,
+}));
+
+<Polyline
+  coordinates={polylineCoords}
+  strokeColor="#2563EB"
+  strokeWidth={4}
+/>
+```
+
+### 3. Cómo manejar cada estado de `GET /api/requests/:id/route`
+
+| `estado` | Acción recomendada en la UI |
+| :--- | :--- |
+| **`OK`** | Mostrar marcadores de `tecnico` y `domicilio`, dibujar `<Polyline>` con `ruta`, y mostrar distancia (`distanciaMetros`) y ETA (`duracionSegundos`). |
+| **`NO_EN_CAMINO`** | Ocultar el seguimiento de ruta en vivo y mostrar el indicador de estado normal (`solicitud.estado.texto`). |
+| **`SIN_UBICACION`** | Mostrar el mapa centrado en el domicilio con el aviso `mensaje` (*"El técnico aún no comparte su ubicación."*). |
+| **`RUTA_NO_DISPONIBLE`** | Mantener visibles los marcadores de `tecnico` y `domicilio` en el mapa sin polilínea y mostrar un aviso discreto (`mensaje`: *"No pudimos calcular la ruta en este momento."*). |
+
+---
+
 ## Paso 8: Estados de la pantalla
 
 Maneja siempre los 4 estados principales de visualización:

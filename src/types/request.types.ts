@@ -106,3 +106,42 @@ export interface ChatAccessResponse {
   miRol: "CLIENT" | "WORKER";
   contraparte: ContraparteChatResponse;
 }
+
+export type RequestRouteResponse =
+  | {
+      estado: "NO_EN_CAMINO";
+      mensaje: string;
+    }
+  | {
+      estado: "SIN_UBICACION";
+      mensaje: string;
+    }
+  | {
+      estado: "RUTA_NO_DISPONIBLE";
+      mensaje: string;
+      tecnico: {
+        latitude: number;
+        longitude: number;
+        updatedAt: Date;
+      };
+      domicilio: {
+        latitude: number | null;
+        longitude: number | null;
+      };
+    }
+  | {
+      estado: "OK";
+      tecnico: {
+        latitude: number;
+        longitude: number;
+        updatedAt: Date;
+      };
+      domicilio: {
+        latitude: number;
+        longitude: number;
+      };
+      ruta: Array<[number, number]>;
+      distanciaMetros: number;
+      duracionSegundos: number;
+      calculadoEn: Date;
+    };

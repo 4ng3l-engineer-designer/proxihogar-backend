@@ -104,9 +104,12 @@ model Technician {
   cantidadTrabajos Int         @default(0)
   tarifaBase       Float?
   ubicacion        String      // Ej: "Lurín, Lima"
-  latitude         Float
-  longitude        Float
-  disponible       Boolean     @default(true)
+  latitude           Float
+  longitude          Float
+  ubicacionActualLat Float?
+  ubicacionActualLng Float?
+  ubicacionActualAt  DateTime?
+  disponible         Boolean     @default(true)
   experienciaAnios Int
   categoriaId      String?
   createdAt        DateTime    @default(now())

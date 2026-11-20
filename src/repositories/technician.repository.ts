@@ -104,4 +104,29 @@ export class TechnicianRepository {
       },
     });
   }
+
+  /**
+   * Actualiza la ubicación en tiempo real del técnico.
+   */
+  async updateCurrentLocation(
+    technicianId: string,
+    latitude: number,
+    longitude: number,
+    updatedAt: Date
+  ) {
+    return prisma.technician.update({
+      where: { id: technicianId },
+      data: {
+        ubicacionActualLat: latitude,
+        ubicacionActualLng: longitude,
+        ubicacionActualAt: updatedAt,
+      },
+      select: {
+        id: true,
+        ubicacionActualLat: true,
+        ubicacionActualLng: true,
+        ubicacionActualAt: true,
+      },
+    });
+  }
 }

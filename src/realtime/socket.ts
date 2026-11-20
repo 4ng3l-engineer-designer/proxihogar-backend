@@ -141,3 +141,12 @@ export function emitRequestStatus(
     io.to(`request:${requestId}`).emit("request:status", payload);
   }
 }
+
+export function emitTechnicianLocation(
+  requestId: string,
+  payload: { requestId: string; latitude: number; longitude: number; updatedAt: Date }
+): void {
+  if (io) {
+    io.to(`request:${requestId}`).emit("technician:location", payload);
+  }
+}
