@@ -5,7 +5,7 @@
 - Autenticación: Mediante JWT en el header `Authorization: Bearer <token>` para rutas protegidas.
 - Rutas públicas: `/api/technicians/nearby`, `/api/technicians/:id`, `/api/districts`, `/api/request-statuses`, `/api/auth/register` y `/api/auth/login` (se consumen sin token).
 - Rate Limit: Endpoints de autenticación (`/register` y `/login`) limitados a **20 intentos fallidos** cada 15 minutos por IP (`skipSuccessfulRequests: true`). Las peticiones exitosas no descuentan intentos.
-- Expiración automática: Las solicitudes en estado `PENDING` expiran automáticamente tras `REQUEST_EXPIRY_HOURS` horas (por defecto `24`).
+- Expiración automática: Las solicitudes en estado `PENDING` expiran automáticamente tras `REQUEST_EXPIRY_HOURS` horas (por defecto 5 minutos, es decir `5/60` horas).
 - CORS abierto y protección de cabeceras con Helmet.
 - Todos los errores devuelven `{ "error": "mensaje" }`.
 
@@ -709,7 +709,7 @@ Content-Type: application/json
   - `PENDING` → `CANCELLED`
   - `ACCEPTED` → `CANCELLED`
 - **Sistema (automático):**
-  - `PENDING` → `EXPIRED` (registrado con `changedBy: "system"` cuando la solicitud supera `REQUEST_EXPIRY_HOURS` horas sin ser aceptada; default `24` horas).
+  - `PENDING` → `EXPIRED` (registrado con `changedBy: "system"` cuando la solicitud supera `REQUEST_EXPIRY_HOURS` horas sin ser aceptada; default 5 minutos (`5/60` horas)).
 
 **Regla de técnico ocupado (al aceptar):**
 Cuando la transición es a `ACCEPTED`, el servidor verifica dentro de una transacción (bloqueando la fila del técnico) que no tenga otra solicitud en estado `ACCEPTED`, `ON_THE_WAY` o `IN_PROGRESS`. Si ya tiene una, responde `409 Conflict` con `"Ya tienes un servicio en curso. Finalízalo antes de aceptar otro."`. Esta restricción aplica únicamente al aceptar, no al crear solicitudes.
@@ -756,7 +756,7 @@ Endpoint público para consultar la lista de estados configurados en el sistema,
 ]
 ```
 
-> **Expiración automática (`REQUEST_EXPIRY_HOURS`):** Un job interno (`src/jobs/expireRequests.ts`) se ejecuta al arrancar el servidor y cada minuto por defecto (configurable con `REQUEST_EXPIRY_CHECK_MS`, en milisegundos; default `60000`) para expirar solicitudes `PENDING` más antiguas que `REQUEST_EXPIRY_HOURS` horas (default `24`), registrando un log con `changedBy: "system"` y emitiendo `request:status` por Socket.io. Si la variable `REQUEST_EXPIRY_HOURS` no es un número positivo, el servidor falla al arrancar con un mensaje claro.
+> **Expiración automática (`REQUEST_EXPIRY_HOURS`):** Un job interno (`src/jobs/expireRequests.ts`) se ejecuta al arrancar el servidor y cada minuto por defecto (configurable con `REQUEST_EXPIRY_CHECK_MS`, en milisegundos; default `60000`) para expirar solicitudes `PENDING` más antiguas que `REQUEST_EXPIRY_HOURS` horas (default 5 minutos, `5/60` horas), registrando un log con `changedBy: "system"` y emitiendo `request:status` por Socket.io. Si la variable `REQUEST_EXPIRY_HOURS` no es un número positivo, el servidor falla al arrancar con un mensaje claro.
 
 ---
 

@@ -5,7 +5,7 @@ import { buildEstadoResponse, isSystemTransitionAllowed } from "../utils/request
 import { getChatAccess } from "../utils/chatAccess";
 import { emitRequestStatus } from "../realtime/socket";
 
-const DEFAULT_EXPIRY_HOURS = 24;
+const DEFAULT_EXPIRY_HOURS = 5 / 60; // 5 minutos
 const DEFAULT_EXPIRY_CHECK_INTERVAL_MS = 60 * 1000; // 1 minuto
 
 /**
@@ -30,7 +30,7 @@ export function getRequestExpiryCheckMs(): number {
 }
 
 /**
- * Lee y valida REQUEST_EXPIRY_HOURS desde las variables de entorno (default 24).
+ * Lee y valida REQUEST_EXPIRY_HOURS desde las variables de entorno (default 5/60 h = 5 minutos).
  * Lanza un error claro si el valor configurado no es un número positivo.
  */
 export function getRequestExpiryHours(): number {

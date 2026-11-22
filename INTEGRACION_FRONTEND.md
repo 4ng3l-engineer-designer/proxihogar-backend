@@ -1607,7 +1607,7 @@ Cuando un usuario se registra con `role: "WORKER"` en `POST /api/auth/register`,
 4. **Aceptación de solicitudes y estado ocupado:**
    - Al aceptar una solicitud (`PATCH /api/requests/:id/status` con `{ "status": "ACCEPTED" }`), si el técnico ya tiene un servicio activo (`ACCEPTED`, `ON_THE_WAY` o `IN_PROGRESS`), el backend devolverá **409 Conflict** con `"Ya tienes un servicio en curso. Finalízalo antes de aceptar otro."`. Mostrar este mensaje en un aviso claro al técnico.
 5. **Solicitudes expiradas (`EXPIRED`):**
-   - Si una solicitud permanece en `PENDING` más de `REQUEST_EXPIRY_HOURS` horas (default 24h), el sistema la pasa automáticamente a `EXPIRED` (`texto: "Expirado"`, `paso: null`, `color: "#6B7280"`). En el seguimiento, tratar `EXPIRED` de forma similar a `CANCELLED` (sin barra de progreso del 1 al 5 y con chat deshabilitado).
+   - Si una solicitud permanece en `PENDING` más de `REQUEST_EXPIRY_HOURS` horas (default 5 minutos), el sistema la pasa automáticamente a `EXPIRED` (`texto: "Expirado"`, `paso: null`, `color: "#6B7280"`). En el seguimiento, tratar `EXPIRED` de forma similar a `CANCELLED` (sin barra de progreso del 1 al 5 y con chat deshabilitado).
 6. **Detalle de una solicitud desde la vista del técnico:**
    - Para consultar el detalle de una solicitud asignada desde la app del técnico (`WORKER`), usar **`GET /api/technicians/me/requests/:id`** (en lugar de `GET /api/requests/:id`, que es exclusivo para `CLIENT`). Devuelve los datos del servicio, `cliente: { nombre, telefono }`, `estado` con `historial` y `chat`.
 
