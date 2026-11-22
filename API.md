@@ -756,7 +756,7 @@ Endpoint público para consultar la lista de estados configurados en el sistema,
 ]
 ```
 
-> **Expiración automática (`REQUEST_EXPIRY_HOURS`):** Un job interno (`src/jobs/expireRequests.ts`) se ejecuta al arrancar el servidor y cada 10 minutos para expirar solicitudes `PENDING` más antiguas que `REQUEST_EXPIRY_HOURS` horas (default `24`), registrando un log con `changedBy: "system"` y emitiendo `request:status` por Socket.io. Si la variable `REQUEST_EXPIRY_HOURS` no es un número positivo, el servidor falla al arrancar con un mensaje claro.
+> **Expiración automática (`REQUEST_EXPIRY_HOURS`):** Un job interno (`src/jobs/expireRequests.ts`) se ejecuta al arrancar el servidor y cada minuto por defecto (configurable con `REQUEST_EXPIRY_CHECK_MS`, en milisegundos; default `60000`) para expirar solicitudes `PENDING` más antiguas que `REQUEST_EXPIRY_HOURS` horas (default `24`), registrando un log con `changedBy: "system"` y emitiendo `request:status` por Socket.io. Si la variable `REQUEST_EXPIRY_HOURS` no es un número positivo, el servidor falla al arrancar con un mensaje claro.
 
 ---
 
