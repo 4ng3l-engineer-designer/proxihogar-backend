@@ -2,6 +2,7 @@
 import { RequestStatus } from "@prisma/client";
 import { OrdenTrabajoResumen } from "./workOrder.types";
 import { UltimoMensajeResumen } from "./message.types";
+import { ReviewItemResponse } from "./review.types";
 
 export interface CreateRequestDto {
   technicianId: string;
@@ -85,6 +86,7 @@ export interface RequestResponse {
   estado: EstadoSolicitudResponse;
   chat: ChatAccessInfo;
   ordenTrabajo: OrdenTrabajoResumen | null;
+  resena?: ReviewItemResponse | null;
   mensajesNoLeidos?: number;
   ultimoMensaje?: UltimoMensajeResumen | null;
 }
@@ -110,6 +112,7 @@ export interface WorkerRequestResponse {
   estado: EstadoSolicitudResponse;
   chat: ChatAccessInfo;
   ordenTrabajo: OrdenTrabajoResumen | null;
+  resena?: ReviewItemResponse | null;
   mensajesNoLeidos?: number;
   ultimoMensaje?: UltimoMensajeResumen | null;
 }

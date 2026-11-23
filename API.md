@@ -352,7 +352,7 @@ Authorization: Bearer <token_worker>
 GET /api/technicians/me/requests/:id
 ```
 
-Protegido con `authenticate` y `requireRole("WORKER")`. Devuelve el detalle de una solicitud específica asignada al técnico autenticado (buscado por el `userId` del token), incluyendo los datos básicos del cliente (`nombre`, `telefono` — sin `email` ni `password`), `estado` completo con `historial`, `chat` y `mensajesNoLeidos`. No incluye datos del perfil del técnico ni de otros técnicos.
+Protegido con `authenticate` y `requireRole("WORKER")`. Devuelve el detalle de una solicitud específica asignada al técnico autenticado (buscado por el `userId` del token), incluyendo los datos básicos del cliente (`nombre`, `telefono` — sin `email` ni `password`), `estado` completo con `historial`, `chat`, `mensajesNoLeidos` y `resena` (`null` si aún no fue calificada). No incluye datos del perfil del técnico ni de otros técnicos.
 
 **Headers:**
 ```
@@ -671,7 +671,7 @@ GET /api/requests/:id
 Obtiene los datos de la solicitud, el objeto `tecnico` y el objeto `estado` completo para la pantalla de seguimiento y la cabecera del chat.
 
 **Respuesta 200 OK:**
-Objeto de la solicitud con `tecnico`, `estado` y `mensajesNoLeidos`.
+Objeto de la solicitud con `tecnico`, `estado`, `mensajesNoLeidos` y `resena` (`null` si aún no fue calificada).
 
 **Errores:**
 - **401 Unauthorized:** Token no proporcionado o inválido.
@@ -1249,6 +1249,88 @@ Protegido con `authenticate` y `requireRole("CLIENT")` (cliente dueño). Solo pe
 
 **Respuesta 200 OK:** `{ "orden": { ... }, "solicitud": { ... } }`.  
 **Errores:** `400` (`paymentMethod` inválido o `paymentReference > 50`), `401`, `403`, `404`, `409` (orden no está en `SENT`).
+
+---
+
+### 4.13 Reseñas y calificación post-servicio (C52, C54, C55, C57)
+
+Las respuestas de detalle de solicitud (`GET /api/requests/:id` y `GET /api/technicians/me/requests/:id`) incluyen el campo `resena` (`null` si la solicitud aún no tiene reseña, o `{ id, autor, iniciales, calificacion, comentario, tags, fecha }`).
+
+#### 4.13.1 Crear reseña de un servicio finalizado
+```
+POST /api/requests/:id/review
+```
+Protegido con `authenticate` y `requireRole("CLIENT")` (solo el cliente dueño de la solicitud).
+
+**Body (JSON):**
+| Campo | Tipo | Requerido | Descripción |
+| :--- | :--- | :--- | :--- |
+| `calificacion` | integer | Sí | Entero entre `1` y `5`. |
+| `comentario` | string | Sí | Texto obligatorio, no vacío, máximo 500 caracteres. |
+| `tags` | string[] | No | Arreglo opcional de hasta 5 etiquetas (cada una no vacía y de máximo 20 caracteres). Por defecto `[]`. |
+
+**Reglas de negocio y efecto transaccional:**
+- Solo permitido si la solicitud está en estado `COMPLETED`. Si no: **409 Conflict** (`"Solo puedes calificar un servicio finalizado."`).
+- Solo se permite **una reseña por solicitud**. Si ya existe: **409 Conflict** (`"Ya calificaste este servicio."`).
+- Crea la reseña asociándola a la solicitud (`requestId`), al técnico y al cliente (`autor` e `iniciales` calculados del perfil del cliente).
+- En la misma transacción, recalcula `calificacion` (promedio de todas las reseñas del técnico redondeado a 1 decimal) y `cantidadResenas` (total de reseñas) y actualiza el registro `Technician`.
+- Emite el evento **`review:new`** por Socket.io a la sala `request:<requestId>` con la reseña creada.
+
+**Respuesta 201 Created:**
+```json
+{
+  "id": "b1f2c3d4-...",
+  "autor": "Cliente Ejemplo",
+  "iniciales": "CE",
+  "calificacion": 4,
+  "comentario": "Excelente servicio, muy ordenado y puntual.",
+  "tags": ["Puntual", "Limpio"],
+  "fecha": "23 nov 2026"
+}
+```
+
+**Errores:** `400` (calificación fuera de 1–5 o no entera, comentario vacío/>500 chars, tags inválidos), `401`, `403`, `404` (solicitud no existe o no pertenece al cliente), `409` (no está `COMPLETED` o ya fue calificada).
+
+#### 4.13.2 Consultar reseña de una solicitud
+```
+GET /api/requests/:id/review
+```
+Protegido con `authenticate` (disponible para el cliente dueño o el técnico asignado).
+
+**Respuesta 200 OK:** Objeto `{ id, autor, iniciales, calificacion, comentario, tags, fecha }`.  
+**Errores:** `401`, `404` (solicitud no existe, usuario no es participante o la solicitud aún no tiene reseña).
+
+#### 4.13.3 Listar reseñas de un técnico (paginado, público)
+```
+GET /api/technicians/:id/reviews?limit=10&before=<reviewId>
+```
+Endpoint **público**. Devuelve las reseñas del técnico ordenadas de la más reciente a la más antigua.
+
+**Query Params:**
+| Parámetro | Tipo | Default | Descripción |
+| :--- | :--- | :--- | :--- |
+| `limit` | integer | `10` | Cantidad máxima por página (máximo `50`). |
+| `before` | string | — | Cursor (`id` de la última reseña recibida) para cargar la página siguiente. |
+
+**Respuesta 200 OK:**
+```json
+{
+  "resenas": [
+    {
+      "id": "b1f2c3d4-...",
+      "autor": "Cliente Ejemplo",
+      "iniciales": "CE",
+      "calificacion": 4,
+      "comentario": "Excelente servicio, muy ordenado y puntual.",
+      "tags": ["Puntual", "Limpio"],
+      "fecha": "23 nov 2026"
+    }
+  ],
+  "hayMas": false
+}
+```
+
+**Errores:** `400` (`limit` inválido), `404` (técnico no encontrado o `before` inexistente).
 
 ---
 

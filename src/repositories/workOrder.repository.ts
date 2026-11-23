@@ -179,6 +179,7 @@ export class WorkOrderRepository {
             },
           },
           workOrder: true,
+          review: true,
         },
       });
 

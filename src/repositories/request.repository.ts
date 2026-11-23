@@ -28,6 +28,7 @@ export type RequestWithTechnician = Prisma.RequestGetPayload<{
       };
     };
     workOrder: true;
+    review: true;
   };
 }>;
 
@@ -51,6 +52,7 @@ export type WorkerRequestWithClient = Prisma.RequestGetPayload<{
       };
     };
     workOrder: true;
+    review: true;
   };
 }>;
 
@@ -109,6 +111,7 @@ export class RequestRepository {
           },
         },
         workOrder: true,
+        review: true,
       },
     });
   }
@@ -140,6 +143,7 @@ export class RequestRepository {
           },
         },
         workOrder: true,
+        review: true,
       },
     });
   }
@@ -170,6 +174,7 @@ export class RequestRepository {
           },
         },
         workOrder: true,
+        review: true,
       },
     });
   }
@@ -304,6 +309,7 @@ export class RequestRepository {
             },
           },
           workOrder: true,
+        review: true,
         },
       });
 
@@ -458,6 +464,7 @@ export class RequestRepository {
           },
         },
         workOrder: true,
+        review: true,
       },
     });
   }
@@ -485,6 +492,7 @@ export class RequestRepository {
           },
         },
         workOrder: true,
+        review: true,
       },
     });
   }

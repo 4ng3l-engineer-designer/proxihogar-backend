@@ -29,6 +29,7 @@ import { getChatAccess, getInitials } from "../utils/chatAccess";
 import { emitChatMessage, emitChatRead, emitRequestStatus } from "../realtime/socket";
 import { routingService } from "./routing.service";
 import { mapOrdenTrabajoResumen } from "./workOrder.service";
+import { formatReviewResponse } from "../types/review.types";
 import {
   createSignedStorageUrl,
   deleteFromStorage,
@@ -173,6 +174,7 @@ export class RequestService {
     const mapped = this.mapToResponse(request);
     const summaries = await this.messageRepository.getChatSummariesForRequests([id], clientId);
     mapped.mensajesNoLeidos = summaries.get(id)?.mensajesNoLeidos ?? 0;
+    mapped.resena = request.review ? formatReviewResponse(request.review) : null;
     return mapped;
   }
 
@@ -369,6 +371,7 @@ export class RequestService {
     const mapped = this.mapWorkerRequest(request);
     const summaries = await this.messageRepository.getChatSummariesForRequests([requestId], userId);
     mapped.mensajesNoLeidos = summaries.get(requestId)?.mensajesNoLeidos ?? 0;
+    mapped.resena = request.review ? formatReviewResponse(request.review) : null;
     return mapped;
   }
 

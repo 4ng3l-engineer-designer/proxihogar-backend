@@ -3,12 +3,14 @@ import { Router } from "express";
 import { Role } from "@prisma/client";
 import { RequestController } from "../controllers/request.controller";
 import { WorkOrderController } from "../controllers/workOrder.controller";
+import { ReviewController } from "../controllers/review.controller";
 import { authenticate, requireRole } from "../middlewares/auth.middleware";
 import { uploadChatImage } from "../middlewares/upload.middleware";
 
 const router = Router();
 const requestController = new RequestController();
 const workOrderController = new WorkOrderController();
+const reviewController = new ReviewController();
 
 // Todas las rutas requieren autenticación
 router.use(authenticate);
@@ -31,6 +33,10 @@ router.post("/:id/work-order", requireRole(Role.WORKER), workOrderController.cre
 router.patch("/:id/work-order/send", requireRole(Role.WORKER), workOrderController.send);
 router.get("/:id/work-order", workOrderController.getByRequestId);
 router.post("/:id/work-order/pay", requireRole(Role.CLIENT), workOrderController.pay);
+
+// Reseña post-servicio (C52/C57)
+router.post("/:id/review", requireRole(Role.CLIENT), reviewController.createForRequest);
+router.get("/:id/review", reviewController.getForRequest);
 
 // Ruta en tiempo real hacia el domicilio (solo CLIENT dueño; otros reciben 404)
 router.get("/:id/route", requestController.getRoute);

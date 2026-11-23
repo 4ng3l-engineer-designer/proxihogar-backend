@@ -1806,3 +1806,19 @@ Marca cada punto al completar la integración:
    - Revisa el mensaje devuelto en `{ "error": "..." }`. Generalmente ocurre si `lat` o `lng` faltan o tienen formatos no numéricos.
 4. **Campos `undefined` en pantalla:**
    - Confirma los nombres de las propiedades. En la API se utiliza `distanceKm` (no `distanciaKm`).
+
+---
+
+## Calificación post-servicio (C52/C57)
+
+Cuando una solicitud alcanza el estado **`COMPLETED`** y `solicitud.resena === null`, la app del cliente debe mostrar la pantalla de **Calificación post-servicio**:
+
+1. **Estrellas (1 a 5):** Selector obligatorio de calificación entera (`1` a `5`).
+2. **Comentario:** Campo de texto obligatorio (máximo 500 caracteres).
+3. **Tags opcionales (chips seleccionables):** Hasta 5 etiquetas cortas (máx. 20 caracteres cada una), por ejemplo: `"Puntual"`, `"Limpio"`, `"Amable"`, `"Buen precio"`, `"Profesional"`.
+4. **Envío:** Llamar a `POST /api/requests/:id/review` con `{ calificacion, comentario, tags }`:
+   - El servidor guarda la reseña, recalcula automáticamente `calificacion` (promedio redondeado a 1 decimal) y `cantidadResenas` del técnico en la misma transacción, y emite el evento Socket.io **`review:new`** a la sala de la solicitud.
+   - Si el cliente intenta enviar una segunda reseña para la misma solicitud, la API responde `409 Conflict` (`"Ya calificaste este servicio."`).
+5. **Consulta y listado paginado:**
+   - El detalle de la solicitud (`GET /api/requests/:id` y `GET /api/technicians/me/requests/:id`) incluye el campo `resena` (`null` si aún no se calificó), y también puede consultarse vía `GET /api/requests/:id/review`.
+   - En el perfil público del técnico, para cargar el historial completo con paginación infinita, usar `GET /api/technicians/:id/reviews?limit=10&before=<ultimoId>` revisando `hayMas`.

@@ -171,3 +171,9 @@ export function emitChatRead(
     io.to(`request:${requestId}`).emit("chat:read", payload);
   }
 }
+
+export function emitReviewNew(requestId: string, review: any): void {
+  if (io) {
+    io.to(`request:${requestId}`).emit("review:new", review);
+  }
+}

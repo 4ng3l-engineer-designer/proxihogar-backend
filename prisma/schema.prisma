@@ -152,11 +152,13 @@ model Review {
   tags          String[]
   technicianId  String
   clientId      String?
+  requestId     String?     @unique
   createdAt     DateTime    @default(now())
 
   // Relaciones
   technician    Technician  @relation(fields: [technicianId], references: [id], onDelete: Cascade)
   client        User?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  request       Request?    @relation(fields: [requestId], references: [id], onDelete: SetNull)
 
   @@map("reviews")
 }
@@ -184,6 +186,7 @@ model Request {
   statusLogs    RequestStatusLog[]
   messages      Message[]
   workOrder     WorkOrder?
+  review        Review?
 
   @@map("requests")
 }
