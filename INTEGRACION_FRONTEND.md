@@ -1902,3 +1902,69 @@ export async function detenerYEnviarAudio(
   return res.json(); // { id, tipo: "AUDIO", archivo: { url, mime, size, expiraEn }, duracionSegundos, ... }
 }
 ```
+
+---
+
+## Video en chat (C45)
+
+El chat soporta envío y reproducción de videos cortos usando `multipart/form-data` y URLs firmadas temporales (válidas por 1 hora).
+
+- **Endpoint:** `POST /api/requests/:id/messages/video`
+- **Headers:** `Authorization: Bearer <token>` (deja que `FormData` establezca automáticamente el `Content-Type` multipart).
+- **Campos `FormData`:**
+  - `video`: archivo de video (máximo **50 MB**).
+  - `duracionSegundos` *(opcional)*: duración en segundos como string/número (ej. `"30.0"`).
+  - `idempotencyKey` *(opcional)*: UUID para evitar duplicados en reintentos.
+- **Formatos aceptados (validados por magic bytes):** MP4/M4V (`.mp4`), MOV (`.mov`), WebM (`.webm`) y AVI (`.avi`).
+
+### Ejemplo con `expo-image-picker` (`mediaTypes: Videos`)
+
+```typescript
+import * as ImagePicker from "expo-image-picker";
+
+export async function seleccionarYEnviarVideo(
+  requestId: string,
+  token: string,
+  API_URL: string
+) {
+  const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!granted) throw new Error("Permiso de galería denegado.");
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+    quality: 0.8,
+  });
+
+  if (result.canceled || !result.assets?.[0]) return null;
+
+  const asset = result.assets[0];
+  const duracionSegundos =
+    typeof asset.duration === "number"
+      ? Number((asset.duration / 1000).toFixed(1))
+      : undefined;
+
+  const formData = new FormData();
+  formData.append("video", {
+    uri: asset.uri,
+    name: asset.fileName ?? "video_chat.mp4",
+    type: asset.mimeType ?? "video/mp4",
+  } as any);
+
+  if (duracionSegundos !== undefined) {
+    formData.append("duracionSegundos", String(duracionSegundos));
+  }
+
+  const res = await fetch(`${API_URL}/api/requests/${requestId}/messages/video`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? "No se pudo enviar el video.");
+  }
+
+  return res.json(); // { id, tipo: "VIDEO", archivo: { url, mime, size, expiraEn }, duracionSegundos, ... }
+}
+```

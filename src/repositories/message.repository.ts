@@ -120,7 +120,9 @@ export class MessageRepository {
           ? "📷 Imagen"
           : m.tipo === MessageType.AUDIO
             ? "🎵 Audio"
-            : (m.contenido ?? "").slice(0, 50);
+            : m.tipo === MessageType.VIDEO
+              ? "🎬 Video"
+              : (m.contenido ?? "").slice(0, 50);
       lastMap.set(m.requestId, {
         contenido: preview,
         fecha: m.createdAt,

@@ -35,7 +35,11 @@ import {
   deleteFromStorage,
   uploadToStorage,
 } from "../utils/storage";
-import { MAX_AUDIO_SIZE_BYTES, MAX_IMAGE_SIZE_BYTES } from "../middlewares/upload.middleware";
+import {
+  MAX_AUDIO_SIZE_BYTES,
+  MAX_IMAGE_SIZE_BYTES,
+  MAX_VIDEO_SIZE_BYTES,
+} from "../middlewares/upload.middleware";
 
 function detectImageFormat(buffer: Buffer): { mime: string; ext: string } | null {
   if (!buffer || buffer.length < 12) {
@@ -125,6 +129,53 @@ function detectAudioFormat(buffer: Buffer): { mime: string; ext: string } | null
     buffer[3] === 0xa3
   ) {
     return { mime: "audio/webm", ext: "webm" };
+  }
+
+  return null;
+}
+
+function detectVideoFormat(buffer: Buffer): { mime: string; ext: string } | null {
+  if (!buffer || buffer.length < 4) {
+    return null;
+  }
+
+  // MP4/M4V/MOV: bytes 4-7 = 66 74 79 70 (ftyp)
+  if (
+    buffer.length >= 8 &&
+    buffer[4] === 0x66 &&
+    buffer[5] === 0x74 &&
+    buffer[6] === 0x79 &&
+    buffer[7] === 0x70
+  ) {
+    if (buffer.length >= 12) {
+      const subtype = buffer.subarray(8, 12).toString("ascii");
+      if (subtype.includes("qt")) {
+        return { mime: "video/quicktime", ext: "mov" };
+      }
+    }
+    return { mime: "video/mp4", ext: "mp4" };
+  }
+
+  // WebM: 1A 45 DF A3
+  if (
+    buffer[0] === 0x1a &&
+    buffer[1] === 0x45 &&
+    buffer[2] === 0xdf &&
+    buffer[3] === 0xa3
+  ) {
+    return { mime: "video/webm", ext: "webm" };
+  }
+
+  // AVI: 52 49 46 46 (RIFF) + bytes 8-11 "AVI " (o "AVI")
+  if (
+    buffer.length >= 12 &&
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46 &&
+    buffer.subarray(8, 11).toString("ascii") === "AVI"
+  ) {
+    return { mime: "video/x-msvideo", ext: "avi" };
   }
 
   return null;
@@ -922,6 +973,144 @@ export class RequestService {
     };
   }
 
+  async createVideoMessage(
+    requestId: string,
+    userId: string,
+    userRole: Role,
+    file: Express.Multer.File | undefined,
+    duracionSegundosInput: unknown,
+    idempotencyKeyInput?: unknown
+  ): Promise<{ message: MessageResponse; created: boolean }> {
+    const request = await this.validateParticipant(requestId, userId, userRole);
+
+    const chat = getChatAccess(request.status);
+    if (!chat.disponible) {
+      throw new HttpError(403, chat.motivo || "El chat no está disponible para este servicio.");
+    }
+
+    if (chat.soloLectura) {
+      throw new HttpError(409, "El servicio finalizó; el chat es solo de lectura");
+    }
+
+    const idempotencyKey = this.validateIdempotencyKey(idempotencyKeyInput);
+    if (idempotencyKey) {
+      const existing = await this.messageRepository.findByIdempotencyKey(
+        requestId,
+        idempotencyKey
+      );
+      if (existing) {
+        return {
+          message: await this.formatMessageResponse(existing, userId),
+          created: false,
+        };
+      }
+    }
+
+    if (!file || !file.buffer || file.buffer.length === 0) {
+      throw new HttpError(400, "El campo 'video' es obligatorio.");
+    }
+
+    if (file.size > MAX_VIDEO_SIZE_BYTES || file.buffer.length > MAX_VIDEO_SIZE_BYTES) {
+      throw new HttpError(400, "El video no puede superar los 50 MB.");
+    }
+
+    const detected = detectVideoFormat(file.buffer);
+    if (!detected) {
+      throw new HttpError(
+        400,
+        "Formato de video no permitido. Usa MP4, MOV, WebM o AVI."
+      );
+    }
+
+    let duracionSegundos: number | null = null;
+    if (
+      duracionSegundosInput !== undefined &&
+      duracionSegundosInput !== null &&
+      String(duracionSegundosInput).trim() !== ""
+    ) {
+      const parsed = parseFloat(String(duracionSegundosInput));
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new HttpError(
+          400,
+          "El campo 'duracionSegundos' debe ser un número válido mayor o igual a 0."
+        );
+      }
+      duracionSegundos = parsed;
+    }
+
+    const archivoPath = `requests/${requestId}/video/${crypto.randomUUID()}.${detected.ext}`;
+
+    // 1. Subir archivo al bucket de Supabase Storage
+    try {
+      await uploadToStorage(archivoPath, file.buffer, detected.mime);
+    } catch {
+      throw new HttpError(
+        502,
+        "No se pudo subir el video en este momento. Intenta de nuevo."
+      );
+    }
+
+    // 2. Guardar mensaje en la base de datos (si falla, borrar archivo subido)
+    let message;
+    try {
+      message = await this.messageRepository.create({
+        requestId,
+        senderId: userId,
+        senderRole: userRole,
+        tipo: MessageType.VIDEO,
+        contenido: "",
+        archivoPath,
+        archivoMime: detected.mime,
+        archivoSize: file.buffer.length,
+        duracionSegundos,
+        idempotencyKey,
+      });
+    } catch (dbError) {
+      await deleteFromStorage([archivoPath]);
+      throw dbError;
+    }
+
+    // 3. Generar URL firmada válida por 1 hora
+    const { url, expiraEn } = await createSignedStorageUrl(archivoPath);
+    const archivo: MessageArchivoResponse = {
+      url,
+      mime: detected.mime,
+      size: file.buffer.length,
+      expiraEn,
+    };
+
+    // 4. Emitir por Socket.io a la sala de la solicitud
+    emitChatMessage(requestId, {
+      id: message.id,
+      requestId: message.requestId,
+      tipo: message.tipo,
+      contenido: message.contenido,
+      archivo,
+      duracionSegundos: message.duracionSegundos ?? null,
+      leido: message.readAt !== null,
+      createdAt: message.createdAt,
+      senderId: message.senderId,
+      senderRole: message.senderRole,
+    });
+
+    return {
+      message: {
+        id: message.id,
+        requestId: message.requestId,
+        tipo: message.tipo,
+        contenido: message.contenido,
+        archivo,
+        duracionSegundos: message.duracionSegundos ?? null,
+        leido: message.readAt !== null,
+        createdAt: message.createdAt,
+        senderId: message.senderId,
+        senderRole: message.senderRole,
+        esMio: true,
+      },
+      created: true,
+    };
+  }
+
   private validateIdempotencyKey(raw: unknown): string | null {
     if (raw === undefined || raw === null) {
       return null;
@@ -944,11 +1133,22 @@ export class RequestService {
     userId: string
   ): Promise<MessageResponse> {
     let archivo: MessageArchivoResponse | null = null;
-    if ((m.tipo === MessageType.IMAGE || m.tipo === MessageType.AUDIO) && m.archivoPath) {
+    if (
+      (m.tipo === MessageType.IMAGE ||
+        m.tipo === MessageType.AUDIO ||
+        m.tipo === MessageType.VIDEO) &&
+      m.archivoPath
+    ) {
       const { url, expiraEn } = await createSignedStorageUrl(m.archivoPath);
       archivo = {
         url,
-        mime: m.archivoMime ?? (m.tipo === MessageType.AUDIO ? "audio/mpeg" : "image/jpeg"),
+        mime:
+          m.archivoMime ??
+          (m.tipo === MessageType.AUDIO
+            ? "audio/mpeg"
+            : m.tipo === MessageType.VIDEO
+              ? "video/mp4"
+              : "image/jpeg"),
         size: m.archivoSize ?? 0,
         expiraEn,
       };

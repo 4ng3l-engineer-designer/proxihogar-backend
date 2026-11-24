@@ -1387,6 +1387,59 @@ Content-Type: multipart/form-data
 
 ---
 
+### 4.15 Video en chat (C45)
+```
+POST /api/requests/:id/messages/video
+```
+Protegido con `authenticate` (disponible para el cliente dueño o el técnico asignado, en los mismos estados de chat activos que texto, imagen y audio). Recibe `multipart/form-data`, valida los *magic bytes* del video en memoria (sin escribir en disco), sube el archivo a Supabase Storage en `requests/<requestId>/video/<uuid>.<ext>`, guarda el mensaje (`tipo: "VIDEO"`) y emite el evento `chat:message` por Socket.io a la sala `request:<requestId>`.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+
+**Campos (`FormData`):**
+| Campo | Tipo | Requerido | Descripción |
+| :--- | :--- | :--- | :--- |
+| `video` | File | Sí | Archivo de video (máximo **50 MB**). Formatos permitidos por *magic bytes*: **MP4/M4V** (`.mp4`), **MOV** (`.mov`), **WebM** (`.webm`) y **AVI** (`.avi`). |
+| `duracionSegundos` | number | No | Duración del video en segundos (Float `>= 0`), enviada por el frontend. |
+| `idempotencyKey` | string | No | Clave de idempotencia (máximo 36 caracteres). Si ya existe un mensaje con esa clave en la misma solicitud, responde **200 OK** con el mensaje existente sin volver a subir el video. |
+
+**Respuesta 201 Created** (o **200 OK** si ya existía por `idempotencyKey`):
+```json
+{
+  "id": "f4a1c820-9b10-4c22-81e3-987654321def",
+  "requestId": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
+  "tipo": "VIDEO",
+  "contenido": "",
+  "archivo": {
+    "url": "https://<proyecto>.supabase.co/storage/v1/object/sign/...",
+    "mime": "video/mp4",
+    "size": 12345678,
+    "expiraEn": "2026-11-23T20:30:00.000Z"
+  },
+  "duracionSegundos": 30.0,
+  "leido": false,
+  "createdAt": "2026-11-23T19:30:00.000Z",
+  "senderId": "3339f0ad-83a2-4f82-becb-82225d6a7489",
+  "senderRole": "CLIENT",
+  "esMio": true
+}
+```
+
+> En `GET /api/requests/:id/messages`, los mensajes de tipo `VIDEO` devuelven su objeto `archivo` con una URL firmada válida por **1 hora** y `duracionSegundos`. En los listados de solicitudes, `ultimoMensaje.contenido` muestra `"🎬 Video"`.
+
+**Errores:**
+- **400 Bad Request:** Falta el archivo en `video`, supera 50 MB (`"El video no puede superar los 50 MB."`), formato no permitido (`"Formato de video no permitido. Usa MP4, MOV, WebM o AVI."`) o `duracionSegundos` inválido.
+- **401 Unauthorized:** Token no proporcionado o expirado.
+- **403 Forbidden:** El chat no está disponible (`PENDING`, `CANCELLED` o `EXPIRED`).
+- **404 Not Found:** Solicitud no encontrada o el usuario no es participante.
+- **409 Conflict:** `"El servicio finalizó; el chat es solo de lectura"` (en estado `COMPLETED`).
+- **502 Bad Gateway:** Fallo al subir el video a Supabase Storage (no se crea el mensaje).
+
+---
+
 ## 5. Ejemplo de consumo (TypeScript)
 
 ```typescript
