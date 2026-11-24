@@ -1822,3 +1822,83 @@ Cuando una solicitud alcanza el estado **`COMPLETED`** y `solicitud.resena === n
 5. **Consulta y listado paginado:**
    - El detalle de la solicitud (`GET /api/requests/:id` y `GET /api/technicians/me/requests/:id`) incluye el campo `resena` (`null` si aún no se calificó), y también puede consultarse vía `GET /api/requests/:id/review`.
    - En el perfil público del técnico, para cargar el historial completo con paginación infinita, usar `GET /api/technicians/:id/reviews?limit=10&before=<ultimoId>` revisando `hayMas`.
+
+---
+
+## Audio en chat (C42)
+
+El chat soporta envío y reproducción de notas de voz usando `multipart/form-data` y URLs firmadas temporales (válidas por 1 hora).
+
+- **Endpoint:** `POST /api/requests/:id/messages/audio`
+- **Headers:** `Authorization: Bearer <token>` (no fijes manualmente `Content-Type` en `fetch`, deja que `FormData` agregue el boundary).
+- **Campos `FormData`:**
+  - `audio`: archivo grabado (máximo **10 MB**).
+  - `duracionSegundos` *(opcional)*: duración en segundos como string/número (ej. `"15.5"`).
+  - `idempotencyKey` *(opcional)*: UUID para evitar duplicados en reintentos.
+- **Formatos aceptados (validados por magic bytes):** MP3 (`.mp3`), AAC (`.aac`), OGG (`.ogg`), WAV (`.wav`), M4A/MP4 (`.m4a`) y WebM (`.webm`).
+
+### Ejemplo con `expo-av` para grabar y enviar audio
+
+```typescript
+import { Audio } from "expo-av";
+
+let recording: Audio.Recording | null = null;
+
+export async function iniciarGrabacionAudio(): Promise<void> {
+  const { granted } = await Audio.requestPermissionsAsync();
+  if (!granted) throw new Error("Permiso de micrófono denegado.");
+
+  await Audio.setAudioModeAsync({
+    allowsRecordingIOS: true,
+    playsInSilentModeIOS: true,
+  });
+
+  const { recording: rec } = await Audio.Recording.createAsync(
+    Audio.RecordingOptionsPresets.HIGH_QUALITY // genera .m4a (AAC/MP4) compatible
+  );
+  recording = rec;
+}
+
+export async function detenerYEnviarAudio(
+  requestId: string,
+  token: string,
+  API_URL: string
+) {
+  if (!recording) return null;
+
+  const status = await recording.getStatusAsync();
+  const duracionSegundos =
+    status.isLoaded && typeof status.durationMillis === "number"
+      ? Number((status.durationMillis / 1000).toFixed(1))
+      : undefined;
+
+  await recording.stopAndUnloadAsync();
+  const uri = recording.getURI();
+  recording = null;
+  if (!uri) throw new Error("No se obtuvo el archivo de audio.");
+
+  const formData = new FormData();
+  formData.append("audio", {
+    uri,
+    name: "nota_voz.m4a",
+    type: "audio/mp4",
+  } as any);
+
+  if (duracionSegundos !== undefined) {
+    formData.append("duracionSegundos", String(duracionSegundos));
+  }
+
+  const res = await fetch(`${API_URL}/api/requests/${requestId}/messages/audio`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? "No se pudo enviar el audio.");
+  }
+
+  return res.json(); // { id, tipo: "AUDIO", archivo: { url, mime, size, expiraEn }, duracionSegundos, ... }
+}
+```

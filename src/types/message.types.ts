@@ -14,6 +14,7 @@ export interface MessageResponse {
   tipo: MessageType;
   contenido: string | null;
   archivo: MessageArchivoResponse | null;
+  duracionSegundos?: number | null;
   leido: boolean;
   createdAt: Date;
   senderId: string;
@@ -37,6 +38,7 @@ export interface MessageSocketPayload {
   tipo: MessageType;
   contenido: string | null;
   archivo: MessageArchivoResponse | null;
+  duracionSegundos?: number | null;
   leido: boolean;
   createdAt: Date;
   senderId: string;

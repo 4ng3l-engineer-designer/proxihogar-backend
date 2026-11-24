@@ -5,7 +5,7 @@ import { RequestController } from "../controllers/request.controller";
 import { WorkOrderController } from "../controllers/workOrder.controller";
 import { ReviewController } from "../controllers/review.controller";
 import { authenticate, requireRole } from "../middlewares/auth.middleware";
-import { uploadChatImage } from "../middlewares/upload.middleware";
+import { uploadChatAudio, uploadChatImage } from "../middlewares/upload.middleware";
 
 const router = Router();
 const requestController = new RequestController();
@@ -26,6 +26,7 @@ router.get("/:id/chat", requestController.getChatAccess);
 router.get("/:id/messages", requestController.getMessages);
 router.patch("/:id/messages/read", requestController.markMessagesAsRead);
 router.post("/:id/messages/image", uploadChatImage, requestController.createImageMessage);
+router.post("/:id/messages/audio", uploadChatAudio, requestController.createAudioMessage);
 router.post("/:id/messages", requestController.createMessage);
 
 // Orden de trabajo y pago (C56)

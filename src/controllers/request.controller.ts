@@ -222,6 +222,35 @@ export class RequestController {
     }
   };
 
+  createAudioMessage = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+      const requestId = req.params.id;
+      const duracionSegundos = req.body?.duracionSegundos;
+      const idempotencyKey = req.body?.idempotencyKey;
+
+      const result = await this.requestService.createAudioMessage(
+        requestId,
+        userId,
+        userRole,
+        req.file,
+        duracionSegundos,
+        idempotencyKey
+      );
+      res.status(result.created ? 201 : 200).json(result.message);
+    } catch (error) {
+      if (error instanceof HttpError) {
+        res.status(error.statusCode).json({ error: error.message });
+        return;
+      }
+      console.error("Error al enviar audio:", error);
+      res.status(500).json({
+        error: "Ocurrió un error interno al procesar la solicitud.",
+      });
+    }
+  };
+
   markMessagesAsRead = async (req: Request, res: Response): Promise<void> => {
     try {
       const userId = req.user!.id;

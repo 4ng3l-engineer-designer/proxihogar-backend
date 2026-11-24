@@ -35,7 +35,7 @@ import {
   deleteFromStorage,
   uploadToStorage,
 } from "../utils/storage";
-import { MAX_IMAGE_SIZE_BYTES } from "../middlewares/upload.middleware";
+import { MAX_AUDIO_SIZE_BYTES, MAX_IMAGE_SIZE_BYTES } from "../middlewares/upload.middleware";
 
 function detectImageFormat(buffer: Buffer): { mime: string; ext: string } | null {
   if (!buffer || buffer.length < 12) {
@@ -63,6 +63,68 @@ function detectImageFormat(buffer: Buffer): { mime: string; ext: string } | null
     buffer.subarray(8, 12).toString("ascii") === "WEBP"
   ) {
     return { mime: "image/webp", ext: "webp" };
+  }
+
+  return null;
+}
+
+function detectAudioFormat(buffer: Buffer): { mime: string; ext: string } | null {
+  if (!buffer || buffer.length < 4) {
+    return null;
+  }
+
+  // MP3: FF FB, FF F3, FF F2, o ID3 (49 44 33)
+  if (
+    (buffer[0] === 0xff && (buffer[1] === 0xfb || buffer[1] === 0xf3 || buffer[1] === 0xf2)) ||
+    (buffer[0] === 0x49 && buffer[1] === 0x44 && buffer[2] === 0x33)
+  ) {
+    return { mime: "audio/mpeg", ext: "mp3" };
+  }
+
+  // AAC: FF F1 o FF F9
+  if (buffer[0] === 0xff && (buffer[1] === 0xf1 || buffer[1] === 0xf9)) {
+    return { mime: "audio/aac", ext: "aac" };
+  }
+
+  // OGG: 4F 67 67 53 (OggS)
+  if (
+    buffer[0] === 0x4f &&
+    buffer[1] === 0x67 &&
+    buffer[2] === 0x67 &&
+    buffer[3] === 0x53
+  ) {
+    return { mime: "audio/ogg", ext: "ogg" };
+  }
+
+  // WAV: 52 49 46 46 (RIFF)
+  if (
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46
+  ) {
+    return { mime: "audio/wav", ext: "wav" };
+  }
+
+  // M4A / MP4: bytes 4-7 = 66 74 79 70 (ftyp)
+  if (
+    buffer.length >= 8 &&
+    buffer[4] === 0x66 &&
+    buffer[5] === 0x74 &&
+    buffer[6] === 0x79 &&
+    buffer[7] === 0x70
+  ) {
+    return { mime: "audio/mp4", ext: "m4a" };
+  }
+
+  // WebM: 1A 45 DF A3
+  if (
+    buffer[0] === 0x1a &&
+    buffer[1] === 0x45 &&
+    buffer[2] === 0xdf &&
+    buffer[3] === 0xa3
+  ) {
+    return { mime: "audio/webm", ext: "webm" };
   }
 
   return null;
@@ -722,6 +784,144 @@ export class RequestService {
     };
   }
 
+  async createAudioMessage(
+    requestId: string,
+    userId: string,
+    userRole: Role,
+    file: Express.Multer.File | undefined,
+    duracionSegundosInput: unknown,
+    idempotencyKeyInput?: unknown
+  ): Promise<{ message: MessageResponse; created: boolean }> {
+    const request = await this.validateParticipant(requestId, userId, userRole);
+
+    const chat = getChatAccess(request.status);
+    if (!chat.disponible) {
+      throw new HttpError(403, chat.motivo || "El chat no está disponible para este servicio.");
+    }
+
+    if (chat.soloLectura) {
+      throw new HttpError(409, "El servicio finalizó; el chat es solo de lectura");
+    }
+
+    const idempotencyKey = this.validateIdempotencyKey(idempotencyKeyInput);
+    if (idempotencyKey) {
+      const existing = await this.messageRepository.findByIdempotencyKey(
+        requestId,
+        idempotencyKey
+      );
+      if (existing) {
+        return {
+          message: await this.formatMessageResponse(existing, userId),
+          created: false,
+        };
+      }
+    }
+
+    if (!file || !file.buffer || file.buffer.length === 0) {
+      throw new HttpError(400, "El campo 'audio' es obligatorio.");
+    }
+
+    if (file.size > MAX_AUDIO_SIZE_BYTES || file.buffer.length > MAX_AUDIO_SIZE_BYTES) {
+      throw new HttpError(400, "El audio no puede superar los 10 MB.");
+    }
+
+    const detected = detectAudioFormat(file.buffer);
+    if (!detected) {
+      throw new HttpError(
+        400,
+        "Formato de audio no permitido. Usa MP3, AAC, OGG, WAV, M4A o WebM."
+      );
+    }
+
+    let duracionSegundos: number | null = null;
+    if (
+      duracionSegundosInput !== undefined &&
+      duracionSegundosInput !== null &&
+      String(duracionSegundosInput).trim() !== ""
+    ) {
+      const parsed = parseFloat(String(duracionSegundosInput));
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new HttpError(
+          400,
+          "El campo 'duracionSegundos' debe ser un número válido mayor o igual a 0."
+        );
+      }
+      duracionSegundos = parsed;
+    }
+
+    const archivoPath = `requests/${requestId}/audio/${crypto.randomUUID()}.${detected.ext}`;
+
+    // 1. Subir archivo al bucket de Supabase Storage
+    try {
+      await uploadToStorage(archivoPath, file.buffer, detected.mime);
+    } catch {
+      throw new HttpError(
+        502,
+        "No se pudo subir el audio en este momento. Intenta de nuevo."
+      );
+    }
+
+    // 2. Guardar mensaje en la base de datos (si falla, borrar archivo subido)
+    let message;
+    try {
+      message = await this.messageRepository.create({
+        requestId,
+        senderId: userId,
+        senderRole: userRole,
+        tipo: MessageType.AUDIO,
+        contenido: "",
+        archivoPath,
+        archivoMime: detected.mime,
+        archivoSize: file.buffer.length,
+        duracionSegundos,
+        idempotencyKey,
+      });
+    } catch (dbError) {
+      await deleteFromStorage([archivoPath]);
+      throw dbError;
+    }
+
+    // 3. Generar URL firmada válida por 1 hora
+    const { url, expiraEn } = await createSignedStorageUrl(archivoPath);
+    const archivo: MessageArchivoResponse = {
+      url,
+      mime: detected.mime,
+      size: file.buffer.length,
+      expiraEn,
+    };
+
+    // 4. Emitir por Socket.io a la sala de la solicitud
+    emitChatMessage(requestId, {
+      id: message.id,
+      requestId: message.requestId,
+      tipo: message.tipo,
+      contenido: message.contenido,
+      archivo,
+      duracionSegundos: message.duracionSegundos ?? null,
+      leido: message.readAt !== null,
+      createdAt: message.createdAt,
+      senderId: message.senderId,
+      senderRole: message.senderRole,
+    });
+
+    return {
+      message: {
+        id: message.id,
+        requestId: message.requestId,
+        tipo: message.tipo,
+        contenido: message.contenido,
+        archivo,
+        duracionSegundos: message.duracionSegundos ?? null,
+        leido: message.readAt !== null,
+        createdAt: message.createdAt,
+        senderId: message.senderId,
+        senderRole: message.senderRole,
+        esMio: true,
+      },
+      created: true,
+    };
+  }
+
   private validateIdempotencyKey(raw: unknown): string | null {
     if (raw === undefined || raw === null) {
       return null;
@@ -744,11 +944,11 @@ export class RequestService {
     userId: string
   ): Promise<MessageResponse> {
     let archivo: MessageArchivoResponse | null = null;
-    if (m.tipo === MessageType.IMAGE && m.archivoPath) {
+    if ((m.tipo === MessageType.IMAGE || m.tipo === MessageType.AUDIO) && m.archivoPath) {
       const { url, expiraEn } = await createSignedStorageUrl(m.archivoPath);
       archivo = {
         url,
-        mime: m.archivoMime ?? "image/jpeg",
+        mime: m.archivoMime ?? (m.tipo === MessageType.AUDIO ? "audio/mpeg" : "image/jpeg"),
         size: m.archivoSize ?? 0,
         expiraEn,
       };
@@ -760,6 +960,7 @@ export class RequestService {
       tipo: m.tipo,
       contenido: m.contenido,
       archivo,
+      duracionSegundos: m.duracionSegundos ?? null,
       leido: m.readAt !== null,
       createdAt: m.createdAt,
       senderId: m.senderId,

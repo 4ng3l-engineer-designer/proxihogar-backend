@@ -13,6 +13,7 @@ export class MessageRepository {
     archivoPath?: string | null;
     archivoMime?: string | null;
     archivoSize?: number | null;
+    duracionSegundos?: number | null;
     idempotencyKey?: string | null;
   }): Promise<Message> {
     return prisma.message.create({
@@ -25,6 +26,7 @@ export class MessageRepository {
         archivoPath: data.archivoPath ?? null,
         archivoMime: data.archivoMime ?? null,
         archivoSize: data.archivoSize ?? null,
+        duracionSegundos: data.duracionSegundos ?? null,
         idempotencyKey: data.idempotencyKey ?? null,
       },
     });
@@ -116,7 +118,9 @@ export class MessageRepository {
       const preview =
         m.tipo === MessageType.IMAGE
           ? "📷 Imagen"
-          : (m.contenido ?? "").slice(0, 50);
+          : m.tipo === MessageType.AUDIO
+            ? "🎵 Audio"
+            : (m.contenido ?? "").slice(0, 50);
       lastMap.set(m.requestId, {
         contenido: preview,
         fecha: m.createdAt,

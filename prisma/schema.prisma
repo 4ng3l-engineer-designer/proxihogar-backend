@@ -30,6 +30,7 @@ enum RequestStatus {
 enum MessageType {
   TEXT
   IMAGE
+  AUDIO
 }
 
 enum PaymentMethod {
@@ -218,11 +219,12 @@ model Message {
   senderRole  Role
   tipo        MessageType  @default(TEXT)
   contenido   String?
-  archivoPath    String?
-  archivoMime    String?
-  archivoSize    Int?
-  readAt         DateTime?
-  idempotencyKey String?
+  archivoPath      String?
+  archivoMime      String?
+  archivoSize      Int?
+  duracionSegundos Float?
+  readAt           DateTime?
+  idempotencyKey   String?
   createdAt      DateTime     @default(now())
 
   // Relaciones

@@ -1334,6 +1334,59 @@ Endpoint **público**. Devuelve las reseñas del técnico ordenadas de la más r
 
 ---
 
+### 4.14 Audio en chat (C42)
+```
+POST /api/requests/:id/messages/audio
+```
+Protegido con `authenticate` (disponible para el cliente dueño o el técnico asignado, en los mismos estados de chat activos que texto e imagen). Recibe `multipart/form-data`, valida los *magic bytes* del audio en memoria (sin escribir en disco), sube el archivo a Supabase Storage en `requests/<requestId>/audio/<uuid>.<ext>`, guarda el mensaje (`tipo: "AUDIO"`) y emite el evento `chat:message` por Socket.io a la sala `request:<requestId>`.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+
+**Campos (`FormData`):**
+| Campo | Tipo | Requerido | Descripción |
+| :--- | :--- | :--- | :--- |
+| `audio` | File | Sí | Archivo de audio (máximo **10 MB**). Formatos permitidos por *magic bytes*: **MP3** (`.mp3`), **AAC** (`.aac`), **OGG** (`.ogg`), **WAV** (`.wav`), **M4A/MP4** (`.m4a`) y **WebM** (`.webm`). |
+| `duracionSegundos` | number | No | Duración del audio en segundos (Float `>= 0`), enviada por el frontend. |
+| `idempotencyKey` | string | No | Clave de idempotencia (máximo 36 caracteres). Si ya existe un mensaje con esa clave en la misma solicitud, responde **200 OK** con el mensaje existente sin volver a subir el audio. |
+
+**Respuesta 201 Created** (o **200 OK** si ya existía por `idempotencyKey`):
+```json
+{
+  "id": "a9c8e712-4b10-4a12-91f2-123456789abc",
+  "requestId": "6724b0e8-07cb-4fc0-a034-77a8a97e412e",
+  "tipo": "AUDIO",
+  "contenido": "",
+  "archivo": {
+    "url": "https://<proyecto>.supabase.co/storage/v1/object/sign/...",
+    "mime": "audio/mp4",
+    "size": 234567,
+    "expiraEn": "2026-11-23T20:15:00.000Z"
+  },
+  "duracionSegundos": 15.5,
+  "leido": false,
+  "createdAt": "2026-11-23T19:15:00.000Z",
+  "senderId": "3339f0ad-83a2-4f82-becb-82225d6a7489",
+  "senderRole": "CLIENT",
+  "esMio": true
+}
+```
+
+> En `GET /api/requests/:id/messages`, los mensajes de tipo `AUDIO` también devuelven su objeto `archivo` con una URL firmada válida por **1 hora** y `duracionSegundos`. En los listados de solicitudes, `ultimoMensaje.contenido` muestra `"🎵 Audio"`.
+
+**Errores:**
+- **400 Bad Request:** Falta el archivo en `audio`, supera 10 MB (`"El audio no puede superar los 10 MB."`), formato no permitido (`"Formato de audio no permitido. Usa MP3, AAC, OGG, WAV, M4A o WebM."`) o `duracionSegundos` inválido.
+- **401 Unauthorized:** Token no proporcionado o expirado.
+- **403 Forbidden:** El chat no está disponible (`PENDING`, `CANCELLED` o `EXPIRED`).
+- **404 Not Found:** Solicitud no encontrada o el usuario no es participante.
+- **409 Conflict:** `"El servicio finalizó; el chat es solo de lectura"` (en estado `COMPLETED`).
+- **502 Bad Gateway:** Fallo al subir el audio a Supabase Storage (no se crea el mensaje).
+
+---
+
 ## 5. Ejemplo de consumo (TypeScript)
 
 ```typescript
